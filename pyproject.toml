@@ -1,0 +1,55 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ezpyp"
+description = "Easily build pipelines for Python"
+readme = "README.md"
+authors = [
+    { name = "Kareem Marzouk", email = "bkmarzouk@outlook.com" },
+]
+maintainers = [
+    { name = "Kareem Marzouk", email = "bkmarzouk@outlook.com" },
+]
+requires-python = ">=3.10"
+dependencies = [
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: BSD License",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+dev = [
+    "black",
+    "ruff",
+    "pytest",
+    "pytest-dependency",
+    "pre-commit",
+]
+ci = [
+    "black",
+    "ruff",
+    "pytest",
+    "pytest-dependency",
+]
+
+[tool.hatch]
+version.source = "vcs"
+build.hooks.vcs.version-file = "src/ezpyp/_version.py"
+
+[tool.black]
+skip-string-normalization = false
+line-length = 79
+
+[tool.isort]
+profile = "black"
+line_length = 79
+
+[tool.ruff]
+line-length = 79
