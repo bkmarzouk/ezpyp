@@ -22,7 +22,6 @@ class _Cache:
 class PickleCache(_Cache):
     @staticmethod
     def _load_object(object_path: Path):
-        print("pickle")
         with open(object_path, "rb") as f:
             cached_object = pickle.load(f)
 
@@ -30,7 +29,6 @@ class PickleCache(_Cache):
 
     @staticmethod
     def _cache_object(object_path: Path, object_to_cache: Any):
-        print("pickle")
         with open(object_path, "wb") as f:
             pickle.dump(object_to_cache, f)
 
@@ -160,6 +158,12 @@ class PickleStep(PickleCache, _Step):
             depends_on=depends_on,
         )
 
+    def __str__(self):
+        return "Pickle Step Object '{self.name}'"
+
+    def __repr__(self):
+        return str(self)
+
 
 class DillStep(DillCache, _Step):
     def __init__(
@@ -201,6 +205,21 @@ class NumpyStep(NumpyCache, _Step):
         )
 
 
+class PlaceHolder:
+    def __init__(self, step: _Step):
+        self.name = step.name
+        self._update = step.get_result
+
+    def __str__(self):
+        return f"TMP for {self.name}"
+
+    def __repr__(self):
+        return f"TMP for {self.name}"
+
+    def update(self):
+        return self._update()
+
+
 class Pipeline:
     def __init__(self, cache_location: Path, pipeline_id: str):
         self.cache_location = cache_location
@@ -214,3 +233,73 @@ class Pipeline:
 
     def add_numpy_step(self, *args, **kwargs):
         pass  # TODO
+
+
+def _as_step(
+    step_type: str,
+    pipeline: Pipeline,
+    depends_on: List[PickleStep | DillStep | NumpyStep] = [],
+):
+    def decorator(function):
+        def wrapper(*args, **kwargs):
+            # print(f"Pipeline: {pipeline}")
+            # print(f"Dependencies: {depends_on}")
+            # print(f"Function: {function.__name__}")
+            step_class = {
+                "pickle": PickleStep,
+                "dill": DillStep,
+                "numpy": NumpyStep,
+            }[step_type]
+
+            step: PickleStep | DillStep | NumpyStep = step_class(
+                cache_location=pipeline.cache_location,
+                name=function.__name__,
+                args=list(args),
+                kwargs=kwargs,
+                function=function,
+                depends_on=depends_on,
+            )
+            return step
+
+        return wrapper
+
+    return decorator
+
+
+def as_pickle_step(
+    pipeline: Pipeline,
+    depends_on: List[PickleStep | DillStep | NumpyStep] = [],
+):
+    return _as_step("pickle", pipeline, depends_on)
+
+
+def as_dill_step(
+    pipeline: Pipeline,
+    depends_on: List[PickleStep | DillStep | NumpyStep] = [],
+):
+    return _as_step("dill", pipeline, depends_on)
+
+
+def as_numpy_step(
+    pipeline: Pipeline,
+    depends_on: List[PickleStep | DillStep | NumpyStep] = [],
+):
+    return _as_step("numpy", pipeline, depends_on)
+
+
+if __name__ == "__main__":
+    pipeline = Pipeline(Path.cwd(), "test")
+
+    @as_pickle_step(pipeline)
+    def a():
+        return 0
+
+    step_a = a()
+
+    @as_pickle_step(pipeline, depends_on=[step_a])
+    def b(alpha):
+        return 1 + alpha
+
+    step_b = b(PlaceHolder(step_a))
+
+    print(step_b.args, step_b.kwargs)
