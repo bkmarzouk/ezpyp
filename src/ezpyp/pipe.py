@@ -78,6 +78,14 @@ class _Step:
         except FileNotFoundError:
             self.status = -1
 
+    def __eq__(self, other):
+        # TODO: This should be improved at some point but will help with
+        #       uniqueness at least for now.
+        return self.name == other.name
+
+    def __hash__(self):
+        return hash(self.name)
+
     @staticmethod
     def _load_object(object_path: Path) -> Any:
         pass
@@ -159,7 +167,7 @@ class PickleStep(PickleCache, _Step):
         )
 
     def __str__(self):
-        return "Pickle Step Object '{self.name}'"
+        return f"Pickle Step Object '{self.name}'"
 
     def __repr__(self):
         return str(self)
@@ -220,19 +228,23 @@ class PlaceHolder:
         return self._update()
 
 
+class RepeatedStepError(Exception):
+    pass
+
+
 class Pipeline:
     def __init__(self, cache_location: Path, pipeline_id: str):
         self.cache_location = cache_location
         self.pipeline_id = pipeline_id
+        self.steps = set()
 
-    def add_pickle_step(self, *args, **kwargs):
-        pass  # TODO
+    def add_step(self, step: PickleStep | DillStep | NumpyStep):
+        if step in self.steps:
+            raise RepeatedStepError(
+                f"Step '{step.name}' already detected in pipeline!"
+            )
 
-    def add_dill_step(self, *args, **kwargs):
-        pass  # TODO
-
-    def add_numpy_step(self, *args, **kwargs):
-        pass  # TODO
+        self.steps.add(step)
 
 
 def _as_step(
@@ -259,6 +271,9 @@ def _as_step(
                 function=function,
                 depends_on=depends_on,
             )
+
+            pipeline.add_step(step)
+
             return step
 
         return wrapper
@@ -302,4 +317,4 @@ if __name__ == "__main__":
 
     step_b = b(PlaceHolder(step_a))
 
-    print(step_b.args, step_b.kwargs)
+    print(pipeline.steps)
