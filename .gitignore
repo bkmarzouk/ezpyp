@@ -68,3 +68,7 @@ generated/*
 
 # Version file
 src/ezpyp/_version.py
+
+# Pipeline files
+*.status
+*.step
