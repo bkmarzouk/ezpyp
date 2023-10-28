@@ -61,13 +61,13 @@ class NumpyCache(_Cache):
 
 class _Step:
     def __init__(
-            self,
-            cache_location: Path,
-            name: str,
-            args: List[Any],
-            kwargs: dict,
-            function: Callable,
-            depends_on: List[Any],
+        self,
+        cache_location: Path,
+        name: str,
+        args: List[Any],
+        kwargs: dict,
+        function: Callable,
+        depends_on: List[Any],
     ):
         self.cache_location = cache_location
         self.name = name
@@ -143,13 +143,13 @@ class _Step:
 
 class PickleStep(PickleCache, _Step):
     def __init__(
-            self,
-            cache_location: Path,
-            name: str,
-            args: List[Any],
-            kwargs: dict,
-            function: Callable,
-            depends_on: List[Any],
+        self,
+        cache_location: Path,
+        name: str,
+        args: List[Any],
+        kwargs: dict,
+        function: Callable,
+        depends_on: List[Any],
     ):
         super().__init__(
             cache_location=cache_location,
@@ -163,13 +163,13 @@ class PickleStep(PickleCache, _Step):
 
 class DillStep(DillCache, _Step):
     def __init__(
-            self,
-            cache_location: Path,
-            name: str,
-            args: List[Any],
-            kwargs: dict,
-            function: Callable,
-            depends_on: List[Any],
+        self,
+        cache_location: Path,
+        name: str,
+        args: List[Any],
+        kwargs: dict,
+        function: Callable,
+        depends_on: List[Any],
     ):
         super().__init__(
             cache_location=cache_location,
@@ -183,13 +183,13 @@ class DillStep(DillCache, _Step):
 
 class NumpyStep(NumpyCache, _Step):
     def __init__(
-            self,
-            cache_location: Path,
-            name: str,
-            args: List[Any],
-            kwargs: dict,
-            function: Callable,
-            depends_on: List[Any],
+        self,
+        cache_location: Path,
+        name: str,
+        args: List[Any],
+        kwargs: dict,
+        function: Callable,
+        depends_on: List[Any],
     ):
         super().__init__(
             cache_location=cache_location,
@@ -202,7 +202,6 @@ class NumpyStep(NumpyCache, _Step):
 
 
 class Pipeline:
-
     def __init__(self, cache_location: Path, pipeline_id: str):
         self.cache_location = cache_location
         self.pipeline_id = pipeline_id
