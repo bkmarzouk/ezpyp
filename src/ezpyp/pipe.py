@@ -1,3 +1,4 @@
+from copy import deepcopy
 from typing import Any, List, Callable
 from pathlib import Path
 import pickle
@@ -234,9 +235,10 @@ class RepeatedStepError(Exception):
 
 class Pipeline:
     def __init__(self, cache_location: Path, pipeline_id: str):
+        self.phases = None
         self.cache_location = cache_location
         self.pipeline_id = pipeline_id
-        self.steps = set()
+        self.steps = []
 
     def add_step(self, step: PickleStep | DillStep | NumpyStep):
         if step in self.steps:
@@ -244,7 +246,46 @@ class Pipeline:
                 f"Step '{step.name}' already detected in pipeline!"
             )
 
-        self.steps.add(step)
+        self.steps.append(step)
+
+    def organize_steps(self):
+        phases = {}
+
+        for step in self.steps:
+            n = len(set(step.depends_on))
+
+            if n in phases:
+                phases[n].append(step)
+            else:
+                phases[n] = [step]
+
+        # Remap phases such that indices are strictly monotonic and linear
+        for ii in range(len(phases)):
+            if ii not in phases:
+                print(ii, "/", len(phases))
+
+                jj = ii + 1
+
+                while jj not in phases:
+                    jj += 1
+
+                phases[ii] = phases[jj]
+                del phases[jj]
+
+        self.phases = phases
+
+
+def expand_dependencies(dependencies: List[PickleStep | DillStep | NumpyStep]):
+    expanded = []
+
+    while dependencies:
+        for dep_step in dependencies:
+            expanded.append(dep_step)
+            dependencies.remove(dep_step)
+            if dep_step.depends_on:
+                expanded += expand_dependencies(dep_step.depends_on)
+
+    return expanded
 
 
 def _as_step(
@@ -254,27 +295,24 @@ def _as_step(
 ):
     def decorator(function):
         def wrapper(*args, **kwargs):
-            # print(f"Pipeline: {pipeline}")
-            # print(f"Dependencies: {depends_on}")
-            # print(f"Function: {function.__name__}")
             step_class = {
                 "pickle": PickleStep,
                 "dill": DillStep,
                 "numpy": NumpyStep,
             }[step_type]
 
-            step: PickleStep | DillStep | NumpyStep = step_class(
+            pipeline_step: PickleStep | DillStep | NumpyStep = step_class(
                 cache_location=pipeline.cache_location,
                 name=function.__name__,
                 args=list(args),
                 kwargs=kwargs,
                 function=function,
-                depends_on=depends_on,
+                depends_on=expand_dependencies(deepcopy(depends_on)),
             )
 
-            pipeline.add_step(step)
+            pipeline.add_step(pipeline_step)
 
-            return step
+            return pipeline_step
 
         return wrapper
 
@@ -307,14 +345,52 @@ if __name__ == "__main__":
 
     @as_pickle_step(pipeline)
     def a():
-        return 0
+        return 1
 
     step_a = a()
 
-    @as_pickle_step(pipeline, depends_on=[step_a])
-    def b(alpha):
-        return 1 + alpha
+    @as_pickle_step(pipeline)
+    def b():
+        return 2
 
-    step_b = b(PlaceHolder(step_a))
+    step_b = b()
 
-    print(pipeline.steps)
+    @as_pickle_step(pipeline, depends_on=[step_a, step_b])
+    def c(alpha, beta):
+        return alpha + beta
+
+    step_c = c(PlaceHolder(step_a), PlaceHolder(step_b))
+
+    @as_pickle_step(pipeline, depends_on=[step_c])
+    def d(gamma, n):
+        return gamma**n
+
+    step_d = d(PlaceHolder(step_c), 3)
+
+    @as_pickle_step(pipeline, depends_on=[step_d, step_a])
+    def e(delta, alpha):
+        return delta * alpha
+
+    step_e = e(PlaceHolder(step_d), PlaceHolder(step_a))
+
+    @as_pickle_step(pipeline, depends_on=[step_c])
+    def x(gamma, q):
+        return gamma - q
+
+    step_x = x(PlaceHolder(step_c), 34)
+
+    @as_pickle_step(pipeline, depends_on=[step_x])
+    def y(chi):
+        return chi / 2
+
+    step_y = y(PlaceHolder(step_x))
+
+    @as_pickle_step(pipeline, depends_on=[step_e, step_x])
+    def z(eta, chi):
+        return eta / chi
+
+    step_z = z(PlaceHolder(step_e), PlaceHolder(step_x))
+
+    pipeline.organize_steps()
+
+    print(pipeline.phases)
