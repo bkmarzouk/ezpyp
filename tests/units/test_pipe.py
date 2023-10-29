@@ -13,65 +13,64 @@ from pickle import PicklingError
 from types import LambdaType
 import numpy as np
 
+# Objects to pass cache/load tests
+pass_obj_pickle = ([1, 2], "foo", ("bar", "pizza"))
+pass_obj_dill = (
+    [1, 2],
+    "foo",
+    ("bar", "pizza"),
+    lambda x: x**2,
+)
+pass_obj_numpy = (
+    np.arange(0, 100, 10),
+    np.array((2, 2), dtype=float),
+    np.ones(10) * 5,
+)
+pass_objs = (pass_obj_pickle, pass_obj_dill, pass_obj_numpy)
 
-class _SetupCacheTests:
-    pass_objects: tuple = ()
-    fail_objects: tuple = ()
-    cache_method: DillCache | PickleCache | NumpyCache
-    extension = None
+# Objects to fail cache/load tests
+fail_obj_pickle = (lambda x: x**2,)
+fail_obj_dill = ()
+fail_obj_numpy = ()
+fail_objs = (fail_obj_pickle, fail_obj_dill, fail_obj_numpy)
 
-    def test_cache_and_load_object(self, tmp_path):
-        for idx, test_obj in enumerate(self.pass_objects):
-            path = tmp_path / f"test_obj_{idx}"
+# Constructors
+cache_method_pickle = PickleCache
+cache_method_dill = DillCache
+cache_method_numpy = NumpyCache
+cache_methods = (cache_method_pickle, cache_method_dill, cache_method_numpy)
 
-            if self.extension is not None:
-                path = path.with_suffix(f".{self.extension}")
-
-            self.cache_method._cache_object(path, test_obj)
-
-            assert path.exists()
-
-            loaded = self.cache_method._load_object(path)
-
-            if isinstance(test_obj, LambdaType):  # Lazy compare byte code
-                assert test_obj.__code__.co_code == loaded.__code__.co_code
-            elif isinstance(test_obj, np.ndarray):
-                elementwise: np.ndarray = test_obj == loaded
-                assert elementwise.all()
-            else:
-                assert self.cache_method._load_object(path) == test_obj
-
-        for idx, test_obj in enumerate(self.fail_objects):
-            path = tmp_path / f"test_obj_{idx}"
-
-            with pytest.raises(PicklingError):
-                self.cache_method._cache_object(path, test_obj)
+object_cache_test_data = list(zip(pass_objs, fail_objs, cache_methods))
 
 
-class TestPickleCache(_SetupCacheTests):
-    pass_objects = ([1, 2], "foo", ("bar", "pizza"))
-    fail_objects = (lambda x: x**2,)
-    cache_method = PickleCache
+@pytest.mark.parametrize(
+    "pass_objs,fail_objs,cache_method", object_cache_test_data
+)
+def test_cache_object(tmp_path, pass_objs, fail_objs, cache_method):
+    if cache_method == NumpyCache:
+        path = tmp_path / "test.npy"
+    else:
+        path = tmp_path / "test.obj"
 
+    for test_obj in pass_objs:
+        cache_method._cache_object(path, test_obj)
 
-class TestDillCache(_SetupCacheTests):
-    pass_objects = (
-        [1, 2],
-        "foo",
-        ("bar", "pizza"),
-        lambda x: x**2,
-    )
-    cache_method = DillCache
+        assert path.exists()
 
+        loaded = cache_method._load_object(path)
 
-class TestNumpyCache(_SetupCacheTests):
-    pass_objects = (
-        np.arange(0, 100, 10),
-        np.array((2, 2), dtype=float),
-        np.ones(10) * 5,
-    )
-    cache_method = NumpyCache
-    extension = "npy"
+        if isinstance(test_obj, LambdaType):  # Lazy compare byte code
+            assert test_obj.__code__.co_code == loaded.__code__.co_code
+        elif isinstance(test_obj, np.ndarray):
+            assert (test_obj == loaded).all()
+        else:
+            assert cache_method._load_object(path) == test_obj
+
+        path.unlink(missing_ok=False)
+
+    for test_obj in fail_objs:
+        with pytest.raises(PicklingError):
+            cache_method._cache_object(path, test_obj)
 
 
 def test_step_equality(tmp_path):
@@ -232,9 +231,8 @@ def test_cache_and_load_result(tmp_path, function, args, kwargs, result):
 
         # No dependencies, so should be fine!
         step.check_ready()
-
         assert step.status == -1
-        # Compute and cache
+
         direct_calculation = step.get_result()
         cached_calculation = step.get_result()
         if isinstance(result, np.ndarray):
