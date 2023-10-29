@@ -82,6 +82,7 @@ def test_step_equality(tmp_path):
         kwargs={},
         function=lambda x: None,
         depends_on=[],
+        extra_suffix="",
     )
 
     assert step == _Step(
@@ -91,6 +92,7 @@ def test_step_equality(tmp_path):
         kwargs={},
         function=lambda x: None,
         depends_on=[],
+        extra_suffix="",
     )
 
     assert step != _Step(
@@ -100,12 +102,12 @@ def test_step_equality(tmp_path):
         kwargs={},
         function=lambda x: None,
         depends_on=[],
+        extra_suffix="",
     )
 
 
 def test_step_get_path(tmp_path):
     step_name = "test"
-
     step = _Step(
         cache_location=tmp_path,
         name=step_name,
@@ -113,17 +115,34 @@ def test_step_get_path(tmp_path):
         kwargs={},
         function=lambda x: None,
         depends_on=[],
+        extra_suffix="",
     )
-
     assert step._get_object_path("foo") == tmp_path / f"{step_name}.foo"
     assert step.get_results_path() == tmp_path / f"{step_name}.step"
     assert step.get_status_path() == tmp_path / f"{step_name}.status"
 
 
+def test_step_get_path_npy(tmp_path):
+    step_name = "test"
+    npy_step = NumpyStep(
+        cache_location=tmp_path,
+        name=step_name,
+        args=[],
+        kwargs={},
+        function=lambda x: None,
+        depends_on=[],
+    )
+    assert npy_step.get_results_path() == tmp_path / f"{step_name}.step.npy"
+    assert npy_step.get_status_path() == tmp_path / f"{step_name}.status.npy"
+
+
 def test_check_ready(tmp_path):
     step_name = "test"
 
-    for step_class in (_Step, DillStep, PickleStep, NumpyStep):
+    def quick_step(*args, **kwargs):
+        return _Step(*args, **kwargs, extra_suffix="")
+
+    for step_class in (quick_step, DillStep, PickleStep, NumpyStep):
         base_step = step_class(
             cache_location=tmp_path,
             name=step_name,
