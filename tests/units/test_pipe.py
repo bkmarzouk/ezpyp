@@ -1,5 +1,5 @@
 import pytest
-from ezpyp.pipe import DillCache, PickleCache, NumpyCache
+from ezpyp.pipe import _Step, DillCache, PickleCache, NumpyCache
 from pickle import PicklingError
 from types import LambdaType
 import numpy as np
@@ -67,3 +67,49 @@ class TestNumpyCache(_SetupCacheTests):
     )
     cache_method = NumpyCache
     extension = "npy"
+
+
+def test_step_equality(tmp_path):
+    step = _Step(
+        cache_location=tmp_path,
+        name="test",
+        args=[],
+        kwargs={},
+        function=lambda x: None,
+        depends_on=[],
+    )
+
+    assert step == _Step(
+        cache_location=tmp_path,
+        name="test",
+        args=[],
+        kwargs={},
+        function=lambda x: None,
+        depends_on=[],
+    )
+
+    assert step != _Step(
+        cache_location=tmp_path,
+        name="test2",
+        args=[],
+        kwargs={},
+        function=lambda x: None,
+        depends_on=[],
+    )
+
+
+def test_step_get_path(tmp_path):
+    step_name = "test"
+
+    step = _Step(
+        cache_location=tmp_path,
+        name=step_name,
+        args=[],
+        kwargs={},
+        function=lambda x: None,
+        depends_on=[],
+    )
+
+    assert step._get_object_path("foo") == tmp_path / f"{step_name}.foo"
+    assert step.get_results_path() == tmp_path / f"{step_name}.step"
+    assert step.get_status_path() == tmp_path / f"{step_name}.status"
