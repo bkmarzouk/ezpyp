@@ -89,11 +89,11 @@ class _Step:
 
     @staticmethod
     def _load_object(object_path: Path) -> Any:
-        pass
+        raise FileNotFoundError("No file can exist for this base class.")
 
     @staticmethod
     def _cache_object(object_path: Path, object_to_cache: Any):
-        pass
+        raise FileNotFoundError("No file can exist for this base class.")
 
     def _get_object_path(self, extension: str):
         object_path = self.cache_location.joinpath(self.name).with_suffix(
@@ -144,7 +144,7 @@ class _Step:
             result = self.load_result()
             print(f"Result from step '{self.name}' loaded successfully")
             return result
-        except FileExistsError:
+        except FileNotFoundError:
             return self.execute()
 
 
