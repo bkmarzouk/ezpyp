@@ -136,11 +136,12 @@ def test_step_get_path_npy(tmp_path):
     assert npy_step.get_status_path() == tmp_path / f"{step_name}.status.npy"
 
 
+def quick_step(*args, **kwargs):
+    return _Step(*args, **kwargs, extra_suffix="")
+
+
 def test_check_ready(tmp_path):
     step_name = "test"
-
-    def quick_step(*args, **kwargs):
-        return _Step(*args, **kwargs, extra_suffix="")
 
     for step_class in (quick_step, DillStep, PickleStep, NumpyStep):
         base_step = step_class(
@@ -183,3 +184,63 @@ def test_check_ready(tmp_path):
         # Partially completed steps should also be invalid
         with pytest.raises(MissingDependency):
             another_step.check_ready()
+
+
+def simple_function(x):
+    return x
+
+
+def function_w_kwargs(x, y=None):
+    if y is not None:
+        return x + y
+    return x
+
+
+def function_w_npy(x_start, x_end, x_n, amplitude, frequency, shift):
+    xspace = np.linspace(x_start, x_end, x_n)
+    return amplitude * np.cos(frequency * xspace + shift)
+
+
+cache_and_load_test_data = [
+    (simple_function, [123], {}, 123),
+    (function_w_kwargs, [123], {"y": 1}, 124),
+    (
+        function_w_npy,
+        [0, np.pi, 2, 10, 1, 0],
+        {},
+        np.array([10, -10], dtype=float),
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "function,args,kwargs,result", cache_and_load_test_data
+)
+def test_cache_and_load_result(tmp_path, function, args, kwargs, result):
+    step_names = ("dill", "pickle", "numpy")
+    step_constructors = (DillStep, PickleStep, NumpyStep)
+
+    for step_class, step_name in zip(step_constructors, step_names):
+        step = step_class(
+            cache_location=tmp_path,
+            name=step_name,
+            args=args,
+            kwargs=kwargs,
+            function=function,
+            depends_on=[],
+        )
+
+        # No dependencies, so should be fine!
+        step.check_ready()
+
+        assert step.status == -1
+        # Compute and cache
+        direct_calculation = step.get_result()
+        cached_calculation = step.get_result()
+        if isinstance(result, np.ndarray):
+            assert (direct_calculation == cached_calculation).all()
+            assert (direct_calculation == result).all()
+            assert (cached_calculation == result).all()
+        else:
+            assert direct_calculation == cached_calculation == result
+        assert step.status == 0
