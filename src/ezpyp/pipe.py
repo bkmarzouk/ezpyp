@@ -67,6 +67,7 @@ class _Step:
         kwargs: dict,
         function: Callable,
         depends_on: List[Any],
+        extra_suffix: str,
     ):
         self.cache_location = cache_location
         self.name = name
@@ -74,6 +75,12 @@ class _Step:
         self.kwargs = kwargs
         self.function = function
         self.depends_on = depends_on
+        self.step_ext = (
+            "step" if extra_suffix == "" else f"step.{extra_suffix}"
+        )
+        self.status_ext = (
+            "status" if extra_suffix == "" else f"status.{extra_suffix}"
+        )
         try:
             self.status = self.load_status()
         except FileNotFoundError:
@@ -102,10 +109,10 @@ class _Step:
         return object_path
 
     def get_results_path(self):
-        return self._get_object_path(extension="step")
+        return self._get_object_path(extension=self.step_ext)
 
     def get_status_path(self):
-        return self._get_object_path(extension="status")
+        return self._get_object_path(extension=self.status_ext)
 
     def load_result(self):
         return self._load_object(self.get_results_path())
@@ -165,6 +172,7 @@ class PickleStep(PickleCache, _Step):
             kwargs=kwargs,
             function=function,
             depends_on=depends_on,
+            extra_suffix="",
         )
 
     def __str__(self):
@@ -191,6 +199,7 @@ class DillStep(DillCache, _Step):
             kwargs=kwargs,
             function=function,
             depends_on=depends_on,
+            extra_suffix="",
         )
 
     def __str__(self):
@@ -217,6 +226,7 @@ class NumpyStep(NumpyCache, _Step):
             kwargs=kwargs,
             function=function,
             depends_on=depends_on,
+            extra_suffix="npy",
         )
 
     def __str__(self):
