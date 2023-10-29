@@ -26,21 +26,21 @@ pass_obj_numpy = (
     np.array((2, 2), dtype=float),
     np.ones(10) * 5,
 )
-pass_objs = (pass_obj_pickle, pass_obj_dill, pass_obj_numpy)
+_pass_objs = (pass_obj_pickle, pass_obj_dill, pass_obj_numpy)
 
 # Objects to fail cache/load tests
 fail_obj_pickle = (lambda x: x**2,)
 fail_obj_dill = ()
 fail_obj_numpy = ()
-fail_objs = (fail_obj_pickle, fail_obj_dill, fail_obj_numpy)
+_fail_objs = (fail_obj_pickle, fail_obj_dill, fail_obj_numpy)
 
 # Constructors
 cache_method_pickle = PickleCache
 cache_method_dill = DillCache
 cache_method_numpy = NumpyCache
-cache_methods = (cache_method_pickle, cache_method_dill, cache_method_numpy)
+_cache_methods = (cache_method_pickle, cache_method_dill, cache_method_numpy)
 
-object_cache_test_data = list(zip(pass_objs, fail_objs, cache_methods))
+object_cache_test_data = list(zip(_pass_objs, _fail_objs, _cache_methods))
 
 
 @pytest.mark.parametrize(
