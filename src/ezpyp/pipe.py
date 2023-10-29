@@ -193,6 +193,12 @@ class DillStep(DillCache, _Step):
             depends_on=depends_on,
         )
 
+    def __str__(self):
+        return f"Dill Step Object '{self.name}'"
+
+    def __repr__(self):
+        return str(self)
+
 
 class NumpyStep(NumpyCache, _Step):
     def __init__(
@@ -212,6 +218,12 @@ class NumpyStep(NumpyCache, _Step):
             function=function,
             depends_on=depends_on,
         )
+
+    def __str__(self):
+        return f"Numpy Step Object '{self.name}'"
+
+    def __repr__(self):
+        return str(self)
 
 
 class PlaceHolder:
