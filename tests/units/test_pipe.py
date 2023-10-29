@@ -1,5 +1,14 @@
 import pytest
-from ezpyp.pipe import _Step, DillCache, PickleCache, NumpyCache
+from ezpyp.pipe import (
+    _Step,
+    DillCache,
+    PickleCache,
+    NumpyCache,
+    MissingDependency,
+    DillStep,
+    PickleStep,
+    NumpyStep,
+)
 from pickle import PicklingError
 from types import LambdaType
 import numpy as np
@@ -12,11 +21,7 @@ class _SetupCacheTests:
     extension = None
 
     def test_cache_and_load_object(self, tmp_path):
-        print("HELLO", self.cache_method)
-
         for idx, test_obj in enumerate(self.pass_objects):
-            print("TESTING", test_obj)
-
             path = tmp_path / f"test_obj_{idx}"
 
             if self.extension is not None:
@@ -113,3 +118,49 @@ def test_step_get_path(tmp_path):
     assert step._get_object_path("foo") == tmp_path / f"{step_name}.foo"
     assert step.get_results_path() == tmp_path / f"{step_name}.step"
     assert step.get_status_path() == tmp_path / f"{step_name}.status"
+
+
+def test_check_ready(tmp_path):
+    step_name = "test"
+
+    for step_class in (_Step, DillStep, PickleStep, NumpyStep):
+        base_step = step_class(
+            cache_location=tmp_path,
+            name=step_name,
+            args=[],
+            kwargs={},
+            function=lambda x: None,
+            depends_on=[],
+        )
+
+        assert base_step.status == -1
+
+        next_step = step_class(
+            cache_location=tmp_path,
+            name=step_name,
+            args=[],
+            kwargs={},
+            function=lambda x: None,
+            depends_on=[base_step],
+        )
+
+        # Error should be raised when status != 0
+        with pytest.raises(MissingDependency):
+            next_step.check_ready()
+
+        # Overwrite initialised value to mimic completion
+        base_step.status = 0
+        next_step.check_ready()
+
+        another_step = step_class(
+            cache_location=tmp_path,
+            name=step_name,
+            args=[],
+            kwargs={},
+            function=lambda x: None,
+            depends_on=[next_step, base_step],
+        )
+
+        # Partially completed steps should also be invalid
+        with pytest.raises(MissingDependency):
+            another_step.check_ready()
