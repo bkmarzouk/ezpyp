@@ -51,7 +51,7 @@ class DillCache(_Cache):
 class NumpyCache(_Cache):
     @staticmethod
     def _load_object(object_path: Path):
-        np.load(object_path)
+        return np.load(object_path)
 
     @staticmethod
     def _cache_object(object_path: Path, object_to_cache: Any):
@@ -262,8 +262,6 @@ class Pipeline:
         # Remap phases such that indices are strictly monotonic and linear
         for ii in range(len(phases)):
             if ii not in phases:
-                print(ii, "/", len(phases))
-
                 jj = ii + 1
 
                 while jj not in phases:
