@@ -8,6 +8,7 @@ from ezpyp.pipe import (
     DillStep,
     PickleStep,
     NumpyStep,
+    PlaceHolder,
 )
 from pickle import PicklingError
 from types import LambdaType
@@ -242,3 +243,13 @@ def test_cache_and_load_result(tmp_path, function, args, kwargs, result):
         else:
             assert direct_calculation == cached_calculation == result
         assert step.status == 0
+
+
+def test_placeholder(tmp_path):
+    base_step = PickleStep(
+        tmp_path, "base", [2], {}, lambda x: x, depends_on=[]
+    )
+
+    tmp = PlaceHolder(base_step)
+
+    assert tmp.get_result() == 2
