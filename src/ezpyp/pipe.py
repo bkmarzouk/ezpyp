@@ -353,7 +353,7 @@ def _as_step(
                 args=list(args),
                 kwargs=kwargs,
                 function=function,
-                depends_on=expand_dependencies(depends_on),
+                depends_on=simplify_dependencies(depends_on),
             )
 
             pipeline.add_step(pipeline_step)
