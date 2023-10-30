@@ -312,6 +312,22 @@ def expand_dependencies(dependencies: List[PickleStep | DillStep | NumpyStep]):
     return expanded
 
 
+def reduce_dependencies(dependencies: List[PickleStep | DillStep | NumpyStep]):
+    # Remove duplicates from dependency expansion
+
+    indices_to_drop = []
+    n_deps = len(dependencies)
+    for ii in range(n_deps - 1):
+        dep = dependencies[ii]
+        if dep in dependencies[ii + 1 :]:
+            indices_to_drop.append(ii)
+
+    for ii in indices_to_drop[::-1]:
+        print(f"Removing duplicated dependency {dependencies.pop(ii)}")
+
+    return dependencies
+
+
 def _as_step(
     step_type: str,
     pipeline: Pipeline,

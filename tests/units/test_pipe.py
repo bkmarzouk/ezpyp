@@ -1,6 +1,7 @@
 import pytest
 from ezpyp.pipe import (
     expand_dependencies,
+    reduce_dependencies,
     _Step,
     DillCache,
     PickleCache,
@@ -291,3 +292,5 @@ class TestDependencyExpansion:
             b1,
             root,
         ]
+
+        reduce_dependencies(expand_dependencies([final]))
