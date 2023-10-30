@@ -1,4 +1,6 @@
-from ezpyp.pipe import SerialPipeline, as_pickle_step
+import pytest
+
+from ezpyp.pipe import SerialPipeline, as_pickle_step, RepeatedStepError
 
 
 def test_attachment(tmp_path):
@@ -21,3 +23,7 @@ def test_attachment(tmp_path):
     assert bar_step in pipeline.steps
 
     assert len(pipeline.steps) == 2
+
+    # Initialization basically attempts to re-add duplicated step
+    with pytest.raises(RepeatedStepError):
+        bar()
