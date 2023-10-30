@@ -296,6 +296,10 @@ class Pipeline:
 
 
 def expand_dependencies(dependencies: List[PickleStep | DillStep | NumpyStep]):
+    # Find all nested dependencies (duplicates may exist)
+
+    dependencies = deepcopy(dependencies)
+
     expanded = []
 
     while dependencies:
@@ -327,7 +331,7 @@ def _as_step(
                 args=list(args),
                 kwargs=kwargs,
                 function=function,
-                depends_on=expand_dependencies(deepcopy(depends_on)),
+                depends_on=expand_dependencies(depends_on),
             )
 
             pipeline.add_step(pipeline_step)
