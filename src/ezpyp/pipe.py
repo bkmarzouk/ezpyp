@@ -255,7 +255,7 @@ class RepeatedStepError(Exception):
     pass
 
 
-class Pipeline:
+class _Pipeline:
     def __init__(self, cache_location: Path, pipeline_id: str):
         self.phases = None
         self.cache_location = cache_location
@@ -293,6 +293,34 @@ class Pipeline:
                 del phases[jj]
 
         self.phases = phases
+
+    def execute(self, *args, **kwargs):
+        pass
+
+    def lock_step(self, current_phase, active_step):
+        pass
+
+    def unlock_step(self, current_phase, active_step):
+        pass
+
+
+class SerialPipeline(_Pipeline):
+    def __init__(self, cache_location: Path, pipeline_id: str):
+        super().__init__(cache_location, pipeline_id)
+
+    def execute(self, *args, **kwargs):
+        for phase_index in sorted(self.phases.keys()):
+            print(
+                "[Executing pipeline phase %02d/%02d]"
+                % (phase_index, len(self.phases) - 1)
+            )
+
+            current_phase = self.phases[phase_index]
+
+            for step in current_phase:
+                self.lock_step(current_phase, step)
+                print(f"--> Running step {step}")
+                self.unlock_step(current_phase, step)
 
 
 def expand_dependencies(dependencies: List[PickleStep | DillStep | NumpyStep]):
@@ -336,7 +364,7 @@ def simplify_dependencies(
 
 def _as_step(
     step_type: str,
-    pipeline: Pipeline,
+    pipeline: _Pipeline,
     depends_on: List[PickleStep | DillStep | NumpyStep] = [],
 ):
     def decorator(function):
@@ -366,28 +394,28 @@ def _as_step(
 
 
 def as_pickle_step(
-    pipeline: Pipeline,
+    pipeline: _Pipeline,
     depends_on: List[PickleStep | DillStep | NumpyStep] = [],
 ):
     return _as_step("pickle", pipeline, depends_on)
 
 
 def as_dill_step(
-    pipeline: Pipeline,
+    pipeline: _Pipeline,
     depends_on: List[PickleStep | DillStep | NumpyStep] = [],
 ):
     return _as_step("dill", pipeline, depends_on)
 
 
 def as_numpy_step(
-    pipeline: Pipeline,
+    pipeline: _Pipeline,
     depends_on: List[PickleStep | DillStep | NumpyStep] = [],
 ):
     return _as_step("numpy", pipeline, depends_on)
 
 
 if __name__ == "__main__":
-    pipeline = Pipeline(Path.cwd(), "test")
+    pipeline = SerialPipeline(Path.cwd(), "test")
 
     @as_pickle_step(pipeline)
     def a():
@@ -440,3 +468,5 @@ if __name__ == "__main__":
     pipeline.organize_steps()
 
     print(pipeline.phases)
+
+    pipeline.execute()
