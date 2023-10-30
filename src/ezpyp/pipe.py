@@ -328,6 +328,12 @@ def reduce_dependencies(dependencies: List[PickleStep | DillStep | NumpyStep]):
     return dependencies
 
 
+def simplify_dependencies(
+    dependencies: List[PickleStep | DillStep | NumpyStep],
+):
+    return reduce_dependencies(expand_dependencies(dependencies))
+
+
 def _as_step(
     step_type: str,
     pipeline: Pipeline,
