@@ -4,6 +4,7 @@ from pathlib import Path
 import pickle
 import dill
 import numpy as np
+import json
 
 
 class MissingDependency(Exception):
@@ -179,6 +180,21 @@ class _Step:
         except FileNotFoundError:
             return -1
 
+    def schema(self):
+        core = deepcopy(self.__dict__)
+
+        # More useful function defs
+        core["cache_location"] = str(core["cache_location"])
+        core["function_name"] = core["function"].__name__
+        core["function_bytes"] = core["function"].__code__.co_code.__str__()
+        del core["function"]
+
+        # Make sense of step and placeholder instances
+        for key in ("args", "kwargs", "depends_on"):
+            core[key] = repr(core[key])
+
+        return core
+
 
 class PickleStep(PickleCache, _Step):
     def __init__(
@@ -280,19 +296,37 @@ class RepeatedStepError(Exception):
     pass
 
 
+class SchemaConflictError(Exception):
+    pass
+
+
+class InitializationError(Exception):
+    pass
+
+
 class _Pipeline:
     def __init__(self, cache_location: Path, pipeline_id: str):
         self.phases: Dict[int, List[PickleStep | DillStep | NumpyStep]] = {}
         self.cache_location = cache_location
         self.pipeline_id = pipeline_id
         self.steps: List[PickleStep | DillStep | NumpyStep] = []
+        self.schema_path = cache_location.joinpath("pipeline.schema")
+        self._initialized = False
 
     def add_step(self, step: PickleStep | DillStep | NumpyStep):
+        if self._initialized:
+            raise InitializationError(
+                "Pipeline already initialized with "
+                f"schema {self.schema_path} - no more "
+                f"steps can be added."
+            )
+
         if step in self.steps:
             raise RepeatedStepError(
                 f"Step '{step.name}' already detected in pipeline!"
             )
 
+        print(f"Adding step... {step}")
         self.steps.append(step)
 
     def organize_steps(self):
@@ -330,6 +364,46 @@ class _Pipeline:
 
     def write_error_report(self, *args, **kwargs):
         pass
+
+    def get_schema(self):
+        raw_schema: Dict[str, List[Dict[str, str]]] = {}
+        for key, steps in self.phases.items():
+            raw_schema[str(key)] = [s.schema() for s in steps]
+
+        return raw_schema
+
+    def initialize(self):
+        self.organize_steps()
+
+        current_schema = self.get_schema()
+
+        if self.schema_path.exists():
+            with open(self.schema_path, "r") as f:
+                existing_schema = json.load(f)
+
+            if current_schema.keys() != existing_schema.keys():
+                raise SchemaConflictError(
+                    f"Existing schema contains a different number of "
+                    f"computational phases compared to those defined in this "
+                    f"pipeline: {current_schema.keys()} != "
+                    f"{existing_schema.keys}"
+                )
+
+            for phase_index in current_schema:
+                for step_schema in current_schema[phase_index]:
+                    if step_schema not in existing_schema[phase_index]:
+                        raise SchemaConflictError(
+                            f"Schema step '{step_schema}' does not belong to "
+                            f"existing schema file '{self.schema_path}'.\n"
+                            f"In order to run the pipeline with different "
+                            f"definitions define a different cache_location, "
+                            f"or clear the existing cache data."
+                        )
+
+        with open(self.schema_path, "w") as f:
+            json.dump(current_schema, f, indent=2, sort_keys=True)
+
+        self._initialized = True
 
 
 class SerialPipeline(_Pipeline):
@@ -393,7 +467,8 @@ def reduce_dependencies(dependencies: List[PickleStep | DillStep | NumpyStep]):
             indices_to_drop.append(ii)
 
     for ii in indices_to_drop[::-1]:
-        print(f"Removing duplicated dependency {dependencies.pop(ii)}")
+        # print(f"Removing duplicated dependency {dependencies.pop(ii)}")
+        dependencies.pop(ii)
 
     return dependencies
 
@@ -512,3 +587,5 @@ if __name__ == "__main__":
     print(pipeline.phases)
 
     pipeline.execute()
+
+    schema = pipeline.get_schema()

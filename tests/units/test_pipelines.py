@@ -5,6 +5,7 @@ from ezpyp.pipe import (
     as_pickle_step,
     RepeatedStepError,
     PlaceHolder,
+    InitializationError,
 )
 
 
@@ -146,3 +147,26 @@ def test_pipeline_with_dependency_subs(tmp_path):
     for step, expected_result in zip((step_base, step_next), (2, 4)):
         assert step.get_status() == 0
         assert step.get_result() == expected_result
+
+
+def test_schema_initialization(tmp_path):
+    pipeline = SerialPipeline(tmp_path, "schema")
+
+    @as_pickle_step(pipeline=pipeline, depends_on=[])
+    def a(x):
+        return x**2
+
+    a(3)
+    pipeline.initialize()
+
+    # Adding more steps after initialization is forbidden
+    with pytest.raises(InitializationError):
+
+        @as_pickle_step(pipeline=pipeline, depends_on=[])
+        def b(x):
+            return x**2
+
+        b(3)
+
+    # Second call to init does nothing
+    pipeline.initialize()
