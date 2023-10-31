@@ -118,8 +118,8 @@ def test_step_get_path(tmp_path):
         extra_suffix="",
     )
     assert step._get_object_path("foo") == tmp_path / f"{step_name}.foo"
-    assert step.get_results_path() == tmp_path / f"{step_name}.step"
-    assert step.get_status_path() == tmp_path / f"{step_name}.status"
+    assert step._results_path() == tmp_path / f"{step_name}.step"
+    assert step._status_path() == tmp_path / f"{step_name}.status"
 
 
 def test_step_get_path_npy(tmp_path):
@@ -132,8 +132,8 @@ def test_step_get_path_npy(tmp_path):
         function=lambda x: None,
         depends_on=[],
     )
-    assert npy_step.get_results_path() == tmp_path / f"{step_name}.step.npy"
-    assert npy_step.get_status_path() == tmp_path / f"{step_name}.status.npy"
+    assert npy_step._results_path() == tmp_path / f"{step_name}.step.npy"
+    assert npy_step._status_path() == tmp_path / f"{step_name}.status.npy"
 
 
 def quick_step(*args, **kwargs):
@@ -153,7 +153,7 @@ def test_check_ready(tmp_path):
             depends_on=[],
         )
 
-        assert base_step.status == -1
+        assert base_step._status == -1
 
         next_step = step_class(
             cache_location=tmp_path,
@@ -169,7 +169,7 @@ def test_check_ready(tmp_path):
             next_step.check_ready()
 
         # Overwrite initialised value to mimic completion
-        base_step.status = 0
+        base_step._status = 0
         next_step.check_ready()
 
         another_step = step_class(
@@ -232,7 +232,7 @@ def test_cache_and_load_result(tmp_path, function, args, kwargs, result):
 
         # No dependencies, so should be fine!
         step.check_ready()
-        assert step.status == -1
+        assert step._status == -1
 
         direct_calculation = step.get_result()
         cached_calculation = step.get_result()
@@ -242,7 +242,7 @@ def test_cache_and_load_result(tmp_path, function, args, kwargs, result):
             assert (cached_calculation == result).all()
         else:
             assert direct_calculation == cached_calculation == result
-        assert step.status == 0
+        assert step._status == 0
 
 
 def test_placeholder(tmp_path):
