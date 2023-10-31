@@ -81,10 +81,6 @@ class _Step:
         self.status_ext = (
             "status" if extra_suffix == "" else f"status.{extra_suffix}"
         )
-        try:
-            self._status = self._load_status()
-        except FileNotFoundError:
-            self._status = -1
 
     def __eq__(self, other):
         # TODO: This should be improved at some point but will help with
@@ -128,8 +124,11 @@ class _Step:
 
     def check_ready(self):
         for step in self.depends_on:
-            if not step._status == 0:
-                raise MissingDependency(step)
+            dep_status = step.get_status()
+            if not dep_status == 0:
+                raise MissingDependency(
+                    f"Dependent step '{step}' has non-zero status: {dep_status}"
+                )
 
     def _update_step_arg_values(self):
         for index, arg in enumerate(self.args):
@@ -154,7 +153,6 @@ class _Step:
 
         self._cache_result(result)
         self._cache_status(status)
-        self._status = status
         return result
 
     def get_result(self):

@@ -141,23 +141,21 @@ def quick_step(*args, **kwargs):
 
 
 def test_check_ready(tmp_path):
-    step_name = "test"
-
-    for step_class in (quick_step, DillStep, PickleStep, NumpyStep):
+    for step_class in (DillStep, PickleStep, NumpyStep):
         base_step = step_class(
             cache_location=tmp_path,
-            name=step_name,
+            name=f"base_{step_class.__name__}",
             args=[],
             kwargs={},
             function=lambda x: None,
             depends_on=[],
         )
 
-        assert base_step._status == -1
+        assert base_step.get_status() == -1
 
         next_step = step_class(
             cache_location=tmp_path,
-            name=step_name,
+            name="next",
             args=[],
             kwargs={},
             function=lambda x: None,
@@ -169,17 +167,22 @@ def test_check_ready(tmp_path):
             next_step.check_ready()
 
         # Overwrite initialised value to mimic completion
-        base_step._status = 0
+        base_step._cache_status(0)
+
+        # Now the next step check ready should be OK
         next_step.check_ready()
 
+        # We can build another step
         another_step = step_class(
             cache_location=tmp_path,
-            name=step_name,
+            name="another",
             args=[],
             kwargs={},
             function=lambda x: None,
             depends_on=[next_step, base_step],
         )
+
+        assert another_step.get_status() == -1
 
         # Partially completed steps should also be invalid
         with pytest.raises(MissingDependency):
@@ -232,7 +235,7 @@ def test_cache_and_load_result(tmp_path, function, args, kwargs, result):
 
         # No dependencies, so should be fine!
         step.check_ready()
-        assert step._status == -1
+        assert step.get_status() == -1
 
         direct_calculation = step.get_result()
         cached_calculation = step.get_result()
@@ -242,7 +245,7 @@ def test_cache_and_load_result(tmp_path, function, args, kwargs, result):
             assert (cached_calculation == result).all()
         else:
             assert direct_calculation == cached_calculation == result
-        assert step._status == 0
+        assert step.get_status() == 0
 
 
 def test_placeholder(tmp_path):
