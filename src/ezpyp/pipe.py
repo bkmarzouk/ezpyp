@@ -180,13 +180,14 @@ class _Step:
         except FileNotFoundError:
             return -1
 
-    def schema(self):
+    def get_schema(self):
         core = deepcopy(self.__dict__)
 
         # More useful function defs
         core["cache_location"] = str(core["cache_location"])
         core["function_name"] = core["function"].__name__
         core["function_bytes"] = core["function"].__code__.co_code.__str__()
+        core["function_hash"] = hash(self.function)
         del core["function"]
 
         # Make sense of step and placeholder instances
@@ -368,7 +369,7 @@ class _Pipeline:
     def get_schema(self):
         raw_schema: Dict[str, List[Dict[str, str]]] = {}
         for key, steps in self.phases.items():
-            raw_schema[str(key)] = [s.schema() for s in steps]
+            raw_schema[str(key)] = [s.get_schema() for s in steps]
 
         return raw_schema
 
