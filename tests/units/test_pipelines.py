@@ -4,7 +4,7 @@ from ezpyp.pipe import (
     SerialPipeline,
     as_pickle_step,
     RepeatedStepError,
-    # PlaceHolder,
+    PlaceHolder,
 )
 
 
@@ -119,5 +119,30 @@ def test_pipeline_with_dependencies(tmp_path):
     pipeline.execute()
 
     for step, expected_result in zip((step_foo, step_bar), (2, 123)):
+        assert step.get_status() == 0
+        assert step.get_result() == expected_result
+
+
+def test_pipeline_with_dependency_subs(tmp_path):
+    pipeline = SerialPipeline(tmp_path, "with_subs")
+
+    @as_pickle_step(pipeline=pipeline, depends_on=[])
+    def base():
+        return 2
+
+    step_base = base()
+
+    @as_pickle_step(pipeline=pipeline, depends_on=[step_base])
+    def alpha(x):
+        return x**2
+
+    step_next = alpha(PlaceHolder(step_base))
+
+    for step in pipeline.steps:
+        assert step.get_status() == -1
+
+    pipeline.execute()
+
+    for step, expected_result in zip((step_base, step_next), (2, 4)):
         assert step.get_status() == 0
         assert step.get_result() == expected_result
