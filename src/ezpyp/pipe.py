@@ -5,6 +5,7 @@ import pickle
 import dill
 import numpy as np
 import json
+from warnings import warn
 
 
 class MissingDependency(Exception):
@@ -12,6 +13,8 @@ class MissingDependency(Exception):
 
 
 class _Cache:
+    _SERIALIZATION: str
+
     @staticmethod
     def _load_object(object_path: Path):
         pass
@@ -22,6 +25,8 @@ class _Cache:
 
 
 class PickleCache(_Cache):
+    _SERIALIZATION = "pickle"
+
     @staticmethod
     def _load_object(object_path: Path):
         with open(object_path, "rb") as f:
@@ -36,6 +41,8 @@ class PickleCache(_Cache):
 
 
 class DillCache(_Cache):
+    _SERIALIZATION = "dill"
+
     @staticmethod
     def _load_object(object_path: Path):
         with open(object_path, "rb") as f:
@@ -50,6 +57,8 @@ class DillCache(_Cache):
 
 
 class NumpyCache(_Cache):
+    _SERIALIZATION = "numpy"
+
     @staticmethod
     def _load_object(object_path: Path):
         return np.load(object_path)
@@ -143,23 +152,23 @@ class _Step:
             if isinstance(value, PlaceHolder):
                 self.kwargs[key] = value.get_result()
 
-    def execute(self, skip=False):
-        if skip:
+    def execute(self, _skip=False):
+        if _skip:
             result = None
             status = 2
-            print(f"[SKIP] '{self.name}' - dependency failure detected.")
+            print(f"  ╰─> [SKIP] '{self.name}' - dependency failure detected.")
         else:
             self.check_ready()
             self._update_step_arg_values()
             try:
                 result = self.function(*self.args, **self.kwargs)
                 status = 0
-                print(f"[PASS] '{self.name}'")
+                print(f"  ╰─> [PASS] '{self.name}'")
+                self._cache_result(result)
             except Exception as exception:
                 result = None
                 status = 1
-                print(f"[FAIL] '{self.name}'\n       {exception}")
-            self._cache_result(result)
+                print(f"  ╰─> [FAIL] '{self.name}'\n       {exception}")
 
         self._cache_status(status)
         return result
@@ -195,6 +204,20 @@ class _Step:
             core[key] = repr(core[key])
 
         return core
+
+    def simple_summary(self, phase):
+        keys = ("name", "args", "kwargs")
+        step_schema = self.get_schema()
+        data_to_summarize = {k: step_schema[k] for k in keys}
+        data_to_summarize["phase"] = str(phase)
+        data_to_summarize["status"] = str(self.get_status())
+        data_to_summarize["result"] = (
+            str(self._results_path())
+            if self._results_path().exists()
+            else "N/A"
+        )
+
+        return "\t".join(data_to_summarize.values()) + "\n"
 
 
 class PickleStep(PickleCache, _Step):
@@ -312,10 +335,13 @@ class _Pipeline:
         self.pipeline_id = pipeline_id
         self.steps: List[PickleStep | DillStep | NumpyStep] = []
         self.schema_path = cache_location.joinpath("pipeline.schema")
-        self._initialized = False
+        self.summary_path = cache_location.joinpath("pipeline.summary")
+        self._initialized_schema = False
+        self._execution_complete = False
+        self._pipeline_failed = False
 
     def add_step(self, step: PickleStep | DillStep | NumpyStep):
-        if self._initialized:
+        if self._initialized_schema:
             raise InitializationError(
                 "Pipeline already initialized with "
                 f"schema {self.schema_path} - no more "
@@ -327,7 +353,7 @@ class _Pipeline:
                 f"Step '{step.name}' already detected in pipeline!"
             )
 
-        print(f"Adding step... {step}")
+        # print(f"Adding step... {step}")
         self.steps.append(step)
 
     def organize_steps(self):
@@ -373,7 +399,7 @@ class _Pipeline:
 
         return raw_schema
 
-    def initialize(self):
+    def initialize_schema(self):
         self.organize_steps()
 
         current_schema = self.get_schema()
@@ -404,7 +430,26 @@ class _Pipeline:
         with open(self.schema_path, "w") as f:
             json.dump(current_schema, f, indent=2, sort_keys=True)
 
-        self._initialized = True
+        self._initialized_schema = True
+
+    def finalize(self, *args, **kwargs):
+        pass
+
+
+class NotExecutedStepWarning(UserWarning):
+    pass
+
+
+class UnrecognizedStepWarning(UserWarning):
+    pass
+
+
+class SkippedStepWarning(UserWarning):
+    pass
+
+
+class FailedStepWarning(UserWarning):
+    pass
 
 
 class SerialPipeline(_Pipeline):
@@ -412,6 +457,7 @@ class SerialPipeline(_Pipeline):
         super().__init__(cache_location, pipeline_id)
 
     def execute(self, *args, **kwargs):
+        self.initialize_schema()
         self.organize_steps()
 
         skip_downstream_phases = False
@@ -428,16 +474,81 @@ class SerialPipeline(_Pipeline):
             for step in current_phase:
                 self.lock_step(current_phase, step)
 
-                # print(f"--> Attempting step {step}")
                 step.execute(
-                    skip=skip_downstream_phases - error_in_current_phase
+                    _skip=skip_downstream_phases - error_in_current_phase
                 )
 
                 if step.get_status() == 1:
                     skip_downstream_phases = True
                     error_in_current_phase = True
+                    self._pipeline_failed = True
 
                 self.unlock_step(current_phase, step)
+
+        self._execution_complete = True
+        self.finalize()
+
+    def finalize(self, *args, **kwargs):
+        assert self._execution_complete
+
+        desc = "Failed" if self._pipeline_failed else "Completed"
+
+        header = f"Pipeline {desc} @ {self.cache_location}\n\n"
+
+        cols = (
+            "\t".join(["name", "args", "kwargs", "phase", "status", "result"])
+            + "\n"
+        )
+
+        with open(self.summary_path, "w") as f:
+            f.write(header)
+            f.write(cols)
+
+            for phase, phase_steps in self.phases.items():
+                for step in phase_steps:
+                    f.write(step.simple_summary(phase))
+
+    def get_result(self, step_name: str):
+        names = []
+
+        for step in self.steps:
+            if step.name == step_name:
+                try:
+                    print(f"attempting to load result for {step}")
+                    return step._load_result()
+                except FileNotFoundError:
+                    print(f"FileNotFound for {step}")
+                    step_status = step.get_status()
+
+                    if step_status == -1:
+                        warn(
+                            "Pipeline step not yet performed: data cannot be "
+                            "retrieved... returning None",
+                            NotExecutedStepWarning,
+                        )
+                    elif step_status == 1:
+                        warn(
+                            "Pipeline step failed: data cannot be retrieved"
+                            "... returning None",
+                            FailedStepWarning,
+                        )
+                    elif step_status == 2:
+                        warn(
+                            "Pipeline step skipped: dependency failure"
+                            "... returning None",
+                            SkippedStepWarning,
+                        )
+                    else:
+                        raise FileNotFoundError(step)
+                    return None
+
+            names.append(step.name)
+
+        warn(
+            "Step name not found in pipeline... returning None",
+            UnrecognizedStepWarning,
+        )
+        return None
 
 
 def expand_dependencies(dependencies: List[PickleStep | DillStep | NumpyStep]):

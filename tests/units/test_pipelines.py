@@ -5,7 +5,12 @@ from ezpyp.pipe import (
     as_pickle_step,
     RepeatedStepError,
     PlaceHolder,
+    SchemaConflictError,
     InitializationError,
+    NotExecutedStepWarning,
+    UnrecognizedStepWarning,
+    SkippedStepWarning,
+    FailedStepWarning,
 )
 
 
@@ -157,7 +162,9 @@ def test_schema_initialization(tmp_path):
         return x**2
 
     a(3)
-    pipeline.initialize()
+    pipeline.initialize_schema()
+
+    assert pipeline.schema_path.exists()
 
     # Adding more steps after initialization is forbidden
     with pytest.raises(InitializationError):
@@ -169,4 +176,86 @@ def test_schema_initialization(tmp_path):
         b(3)
 
     # Second call to init does nothing
-    pipeline.initialize()
+    pipeline.initialize_schema()
+
+
+def test_incompatible_schemas(tmp_path):
+    pipeline_a = SerialPipeline(tmp_path, "A")
+    pipeline_b = SerialPipeline(tmp_path, "B")
+
+    @as_pickle_step(pipeline=pipeline_a, depends_on=[])
+    def a(x):
+        return x**2
+
+    a(1)
+
+    @as_pickle_step(pipeline=pipeline_b, depends_on=[])
+    def a(x):
+        return x**3
+
+    a(1)
+
+    pipeline_a.initialize_schema()
+
+    with pytest.raises(SchemaConflictError):
+        pipeline_b.initialize_schema()
+
+
+def test_summary(tmp_path):
+    pipeline = SerialPipeline(tmp_path, "simple")
+
+    @as_pickle_step(pipeline)
+    def x():
+        return 1
+
+    x()
+
+    pipeline.execute()
+
+    assert pipeline.summary_path.exists()  # TODO: do better...
+
+
+def test_get_result(tmp_path):
+    pipeline = SerialPipeline(tmp_path, "simple")
+
+    @as_pickle_step(pipeline)
+    def x():
+        return 1
+
+    x_step = x()
+
+    @as_pickle_step(pipeline, depends_on=[x_step])
+    def y(zeta):
+        return zeta
+
+    y_step = y(PlaceHolder(x_step))
+
+    @as_pickle_step(pipeline, depends_on=[y_step])
+    def z():
+        raise RuntimeError("Whoa")
+
+    z_step = z()
+
+    @as_pickle_step(pipeline, depends_on=[z_step])
+    def skip():
+        pass
+
+    skip()
+
+    # Check that error is/isn't raised before/after exec
+    with pytest.warns(NotExecutedStepWarning):
+        pipeline.get_result("x")
+    pipeline.execute()
+    pipeline.get_result("x")
+
+    # Check that undefined step warns
+    with pytest.warns(UnrecognizedStepWarning):
+        pipeline.get_result("w")
+
+    # Check failed steps are detected
+    with pytest.warns(FailedStepWarning):
+        pipeline.get_result("z")
+
+    # Check skipped steps are detected
+    with pytest.warns(SkippedStepWarning):
+        pipeline.get_result("skip")
