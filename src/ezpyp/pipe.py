@@ -1,5 +1,5 @@
 from copy import deepcopy
-from typing import Any, List, Callable
+from typing import Any, List, Callable, Dict
 from pathlib import Path
 import pickle
 import dill
@@ -82,9 +82,9 @@ class _Step:
             "status" if extra_suffix == "" else f"status.{extra_suffix}"
         )
         try:
-            self.status = self.load_status()
+            self._status = self._load_status()
         except FileNotFoundError:
-            self.status = -1
+            self._status = -1
 
     def __eq__(self, other):
         # TODO: This should be improved at some point but will help with
@@ -108,51 +108,70 @@ class _Step:
         )
         return object_path
 
-    def get_results_path(self):
+    def _results_path(self):
         return self._get_object_path(extension=self.step_ext)
 
-    def get_status_path(self):
+    def _status_path(self):
         return self._get_object_path(extension=self.status_ext)
 
-    def load_result(self):
-        return self._load_object(self.get_results_path())
+    def _load_result(self):
+        return self._load_object(self._results_path())
 
-    def load_status(self):
-        return self._load_object(self.get_status_path())
+    def _load_status(self):
+        return self._load_object(self._status_path())
 
-    def cache_result(self, result: Any):
-        self._cache_object(self.get_results_path(), result)
+    def _cache_result(self, result: Any):
+        self._cache_object(self._results_path(), result)
 
-    def cache_status(self, status: int):
-        self._cache_object(self.get_status_path(), status)
+    def _cache_status(self, status: int):
+        self._cache_object(self._status_path(), status)
 
     def check_ready(self):
         for step in self.depends_on:
-            if not step.status == 0:
+            if not step._status == 0:
                 raise MissingDependency(step)
 
+    def _update_step_arg_values(self):
+        for index, arg in enumerate(self.args):
+            if isinstance(arg, PlaceHolder):
+                self.args[index] = arg.get_result()
+
+        for key, value in self.kwargs.items():
+            if isinstance(value, PlaceHolder):
+                self.kwargs[key] = value.get_result()
+
     def execute(self):
+        self.check_ready()
+        self._update_step_arg_values()
         try:
             result = self.function(*self.args, **self.kwargs)
             status = 0
             print(f"[PASS] '{self.name}'")
-        except Exception as e:
+        except Exception as exception:
             result = None
             status = 1
-            print(f"[FAIL] '{self.name}'\n       {e}")
+            print(f"[FAIL] '{self.name}'\n       {exception}")
 
-        self.cache_result(result)
-        self.cache_status(status)
-        self.status = status
+        self._cache_result(result)
+        self._cache_status(status)
+        self._status = status
         return result
 
     def get_result(self):
         try:
-            result = self.load_result()
+            result = self._load_result()
             print(f"Result from step '{self.name}' loaded successfully")
             return result
         except FileNotFoundError:
             return self.execute()
+
+    def get_status(self):
+        try:
+            status = self._load_status()
+            print(f"Status from step '{self.name}' loaded successfully")
+            return status
+        except FileNotFoundError:
+            return -1
 
 
 class PickleStep(PickleCache, _Step):
@@ -247,7 +266,7 @@ class PlaceHolder:
     def __repr__(self):
         return f"TMP for {self.name}"
 
-    def update(self):
+    def get_result(self):
         return self._update()
 
 
@@ -257,10 +276,10 @@ class RepeatedStepError(Exception):
 
 class _Pipeline:
     def __init__(self, cache_location: Path, pipeline_id: str):
-        self.phases = None
+        self.phases: Dict[int, List[PickleStep | DillStep | NumpyStep]] = {}
         self.cache_location = cache_location
         self.pipeline_id = pipeline_id
-        self.steps = []
+        self.steps: List[PickleStep | DillStep | NumpyStep] = []
 
     def add_step(self, step: PickleStep | DillStep | NumpyStep):
         if step in self.steps:
@@ -309,6 +328,7 @@ class SerialPipeline(_Pipeline):
         super().__init__(cache_location, pipeline_id)
 
     def execute(self, *args, **kwargs):
+        self.organize_steps()
         for phase_index in sorted(self.phases.keys()):
             print(
                 "[Executing pipeline phase %02d/%02d]"
@@ -320,6 +340,7 @@ class SerialPipeline(_Pipeline):
             for step in current_phase:
                 self.lock_step(current_phase, step)
                 print(f"--> Running step {step}")
+                step.execute()
                 self.unlock_step(current_phase, step)
 
 
