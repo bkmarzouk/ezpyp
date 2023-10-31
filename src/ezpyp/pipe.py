@@ -142,26 +142,31 @@ class _Step:
             if isinstance(value, PlaceHolder):
                 self.kwargs[key] = value.get_result()
 
-    def execute(self):
-        self.check_ready()
-        self._update_step_arg_values()
-        try:
-            result = self.function(*self.args, **self.kwargs)
-            status = 0
-            print(f"[PASS] '{self.name}'")
-        except Exception as exception:
+    def execute(self, skip=False):
+        if skip:
             result = None
-            status = 1
-            print(f"[FAIL] '{self.name}'\n       {exception}")
+            status = 2
+            print(f"[SKIP] '{self.name}' - dependency failure detected.")
+        else:
+            self.check_ready()
+            self._update_step_arg_values()
+            try:
+                result = self.function(*self.args, **self.kwargs)
+                status = 0
+                print(f"[PASS] '{self.name}'")
+            except Exception as exception:
+                result = None
+                status = 1
+                print(f"[FAIL] '{self.name}'\n       {exception}")
+            self._cache_result(result)
 
-        self._cache_result(result)
         self._cache_status(status)
         return result
 
     def get_result(self):
         try:
             result = self._load_result()
-            print(f"Result from step '{self.name}' loaded successfully")
+            # print(f"Result from step '{self.name}' loaded successfully")
             return result
         except FileNotFoundError:
             return self.execute()
@@ -169,7 +174,7 @@ class _Step:
     def get_status(self):
         try:
             status = self._load_status()
-            print(f"Status from step '{self.name}' loaded successfully")
+            # print(f"Status from step '{self.name}' loaded successfully")
             return status
         except FileNotFoundError:
             return -1
@@ -343,20 +348,19 @@ class SerialPipeline(_Pipeline):
             )
 
             current_phase = self.phases[phase_index]
+            error_in_current_phase = False
 
             for step in current_phase:
                 self.lock_step(current_phase, step)
-                if skip_downstream_phases:
-                    print(
-                        f"--> Skipping step {step} due to dependency failure"
-                    )
-                    step._mark_as_skipped()
-                else:
-                    print(f"--> Running step {step}")
-                    step.execute()
 
-                    if step.get_status() == 1:
-                        skip_downstream_phases = True
+                # print(f"--> Attempting step {step}")
+                step.execute(
+                    skip=skip_downstream_phases - error_in_current_phase
+                )
+
+                if step.get_status() == 1:
+                    skip_downstream_phases = True
+                    error_in_current_phase = True
 
                 self.unlock_step(current_phase, step)
 

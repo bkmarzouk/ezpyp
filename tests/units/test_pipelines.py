@@ -1,6 +1,11 @@
 import pytest
 
-from ezpyp.pipe import SerialPipeline, as_pickle_step, RepeatedStepError
+from ezpyp.pipe import (
+    SerialPipeline,
+    as_pickle_step,
+    RepeatedStepError,
+    # PlaceHolder,
+)
 
 
 def test_attachment(tmp_path):
@@ -68,11 +73,25 @@ def test_pipeline_that_fails_with_no_dependencies(tmp_path):
         else:
             return 0
 
-    crash_step = foo()
+    foo_step = foo()
+
+    @as_pickle_step(pipeline=pipeline, depends_on=[])
+    def bar():
+        pass
+
+    bar_step = bar()
+
+    @as_pickle_step(pipeline=pipeline, depends_on=[foo_step])
+    def baz():
+        pass
+
+    baz_step = baz()
 
     pipeline.execute()
 
-    assert crash_step.get_status() == 1
+    assert foo_step.get_status() == 1
+    assert bar_step.get_status() == 0
+    assert baz_step.get_status() == 2
 
 
 def test_pipeline_with_dependencies(tmp_path):
