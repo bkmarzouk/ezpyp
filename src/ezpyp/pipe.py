@@ -122,10 +122,13 @@ class _Step:
     def _cache_status(self, status: int):
         self._cache_object(self._status_path(), status)
 
+    def _mark_as_skipped(self):
+        self._cache_status(2)
+
     def check_ready(self):
         for step in self.depends_on:
             dep_status = step.get_status()
-            if not dep_status == 0:
+            if dep_status not in (0, 2):
                 raise MissingDependency(
                     f"Dependent step '{step}' has non-zero status: {dep_status}"
                 )
@@ -320,6 +323,9 @@ class _Pipeline:
     def unlock_step(self, current_phase, active_step):
         pass
 
+    def write_error_report(self, *args, **kwargs):
+        pass
+
 
 class SerialPipeline(_Pipeline):
     def __init__(self, cache_location: Path, pipeline_id: str):
@@ -327,6 +333,9 @@ class SerialPipeline(_Pipeline):
 
     def execute(self, *args, **kwargs):
         self.organize_steps()
+
+        skip_downstream_phases = False
+
         for phase_index in sorted(self.phases.keys()):
             print(
                 "[Executing pipeline phase %02d/%02d]"
@@ -337,8 +346,18 @@ class SerialPipeline(_Pipeline):
 
             for step in current_phase:
                 self.lock_step(current_phase, step)
-                print(f"--> Running step {step}")
-                step.execute()
+                if skip_downstream_phases:
+                    print(
+                        f"--> Skipping step {step} due to dependency failure"
+                    )
+                    step._mark_as_skipped()
+                else:
+                    print(f"--> Running step {step}")
+                    step.execute()
+
+                    if step.get_status() == 1:
+                        skip_downstream_phases = True
+
                 self.unlock_step(current_phase, step)
 
 
