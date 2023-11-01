@@ -492,19 +492,34 @@ class SerialPipeline(_Pipeline):
     def __init__(self, cache_location: Path, pipeline_id: str):
         super().__init__(cache_location, pipeline_id)
 
-    def build_lock_data(self, current_phase, active_step):
-        data = {
+    def get_lock_data(
+        self,
+        current_phase: int,
+        active_step: PickleStep | DillStep | NumpyStep,
+    ):
+        lock_data = {
             "scheme_hash": hash(self),
             "phase": current_phase,
             "active": hash(active_step),
         }
-        print(data)
+        return lock_data
 
-    def lock_step(self, current_phase, active_step):
-        pass
+    def get_lock_path(self, done=False):
+        return self.cache_location.joinpath("step").with_suffix(
+            ".done" if done else ".active"
+        )
 
-    def unlock_step(self, current_phase, active_step):
-        pass
+    def lock_step(
+        self,
+        current_phase: int,
+        active_step: PickleStep | DillStep | NumpyStep,
+    ):
+        with open(self.get_lock_path(), "w") as f:
+            lock_data = self.get_lock_data(current_phase, active_step)
+            json.dump(lock_data, f, indent=2)
+
+    def unlock_step(self):
+        self.get_lock_path().rename(self.get_lock_path(done=True))
 
     def execute(self, *args, **kwargs):
         self.initialize_schema()
@@ -522,7 +537,7 @@ class SerialPipeline(_Pipeline):
             error_in_current_phase = False
 
             for step in current_phase:
-                self.lock_step(current_phase, step)
+                self.lock_step(phase_index, step)
 
                 step.execute(
                     _skip=skip_downstream_phases - error_in_current_phase
@@ -533,7 +548,7 @@ class SerialPipeline(_Pipeline):
                     error_in_current_phase = True
                     self._pipeline_failed = True
 
-                self.unlock_step(current_phase, step)
+                self.unlock_step()
 
         self._execution_complete = True
         self.finalize()
