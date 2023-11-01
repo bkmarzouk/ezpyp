@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from ezpyp.steps import expand_dependencies, reduce_dependencies, PickleStep
+from ezpyp.steps import PickleStep, expand_dependencies, reduce_dependencies
 
 
 class TestDependencyExpansion:

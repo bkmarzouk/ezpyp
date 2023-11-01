@@ -1,10 +1,10 @@
 import inspect
 from copy import deepcopy
 from pathlib import Path
-from typing import List, Any, Callable
+from typing import Any, Callable, List
 
-from ezpyp.cache import PickleCache, DillCache, NumpyCache
-from ezpyp.utils import fixed_hash, MissingDependency, track_function_source
+from ezpyp.cache import DillCache, NumpyCache, PickleCache
+from ezpyp.utils import MissingDependency, fixed_hash, track_function_source
 
 
 class _Step:

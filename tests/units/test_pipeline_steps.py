@@ -1,10 +1,12 @@
-import pytest
-from ezpyp.steps import _Step, PickleStep, DillStep, NumpyStep, PlaceHolder
-from ezpyp.cache import PickleCache, DillCache, NumpyCache
-from ezpyp.utils import MissingDependency
 from pickle import PicklingError
 from types import LambdaType
+
 import numpy as np
+import pytest
+
+from ezpyp.cache import DillCache, NumpyCache, PickleCache
+from ezpyp.steps import DillStep, NumpyStep, PickleStep, PlaceHolder, _Step
+from ezpyp.utils import MissingDependency
 
 # Objects to pass cache/load tests
 pass_obj_pickle = ([1, 2], "foo", ("bar", "pizza"))
