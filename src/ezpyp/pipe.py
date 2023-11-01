@@ -1,10 +1,9 @@
-from copy import deepcopy
 from typing import List, Dict
 from pathlib import Path
 import json
 from warnings import warn
 
-from ezpyp.steps import PickleStep, DillStep, NumpyStep
+from ezpyp.steps import PickleStep, DillStep, NumpyStep, simplify_dependencies
 from ezpyp.utils import (
     RepeatedStepError,
     SchemaConflictError,
@@ -265,49 +264,13 @@ class SerialPipeline(_Pipeline):
         return None
 
 
-def expand_dependencies(dependencies: List[PickleStep | DillStep | NumpyStep]):
-    # Find all nested dependencies (duplicates may exist)
-
-    dependencies = deepcopy(dependencies)
-
-    expanded = []
-
-    while dependencies:
-        for dep_step in dependencies:
-            expanded.append(dep_step)
-            dependencies.remove(dep_step)
-            if dep_step.depends_on:
-                expanded += expand_dependencies(dep_step.depends_on)
-
-    return expanded
-
-
-def reduce_dependencies(dependencies: List[PickleStep | DillStep | NumpyStep]):
-    # Remove duplicates from dependency expansion
-
-    indices_to_drop = []
-    n_deps = len(dependencies)
-    for ii in range(n_deps - 1):
-        dep = dependencies[ii]
-        if dep in dependencies[ii + 1 :]:
-            indices_to_drop.append(ii)
-
-    for ii in indices_to_drop[::-1]:
-        # print(f"Removing duplicated dependency {dependencies.pop(ii)}")
-        dependencies.pop(ii)
-
-    return dependencies
-
-
-def simplify_dependencies(
-    dependencies: List[PickleStep | DillStep | NumpyStep],
-):
-    return reduce_dependencies(expand_dependencies(dependencies))
+class ParallelPipeline(_Pipeline):
+    pass  # TODO: Implement
 
 
 def _as_step(
     step_type: str,
-    pipeline: _Pipeline,
+    pipeline: SerialPipeline | ParallelPipeline,
     depends_on: List[PickleStep | DillStep | NumpyStep] = [],
 ):
     def decorator(function):
@@ -337,21 +300,21 @@ def _as_step(
 
 
 def as_pickle_step(
-    pipeline: _Pipeline,
+    pipeline: SerialPipeline | ParallelPipeline,
     depends_on: List[PickleStep | DillStep | NumpyStep] = [],
 ):
     return _as_step("pickle", pipeline, depends_on)
 
 
 def as_dill_step(
-    pipeline: _Pipeline,
+    pipeline: SerialPipeline | ParallelPipeline,
     depends_on: List[PickleStep | DillStep | NumpyStep] = [],
 ):
     return _as_step("dill", pipeline, depends_on)
 
 
 def as_numpy_step(
-    pipeline: _Pipeline,
+    pipeline: SerialPipeline | ParallelPipeline,
     depends_on: List[PickleStep | DillStep | NumpyStep] = [],
 ):
     return _as_step("numpy", pipeline, depends_on)
