@@ -1,11 +1,5 @@
 import pytest
-from ezpyp.pipe import (
-    _Step,
-    DillStep,
-    PickleStep,
-    NumpyStep,
-    PlaceHolder,
-)
+from ezpyp.steps import _Step, PickleStep, DillStep, NumpyStep, PlaceHolder
 from ezpyp.cache import PickleCache, DillCache, NumpyCache
 from ezpyp.utils import MissingDependency
 from pickle import PicklingError
