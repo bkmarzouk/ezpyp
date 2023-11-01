@@ -73,3 +73,4 @@ src/ezpyp/_version.py
 *.status
 *.step
 **/pipeline.schema
+**/pipeline.summary
