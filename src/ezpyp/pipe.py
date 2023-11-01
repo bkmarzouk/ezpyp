@@ -6,33 +6,20 @@ import pickle
 import dill
 import numpy as np
 import json
-import os
 from warnings import warn
 
-_EZPYP_HASH = str(3743294)
-
-
-def track_function_source():
-    return os.environ.get("_TRACK_FUNCTION_SOURCE", "False") == "True"
-
-
-class MissingDependency(Exception):
-    pass
-
-
-def fixed_hash(function):
-    def tmp_fixed_hash(*args, **kwargs):
-        os.environ["PYTHONHASHSEED"] = _EZPYP_HASH
-        out = function(*args, **kwargs)
-        del os.environ["PYTHONHASHSEED"]
-        return out
-
-    return tmp_fixed_hash
-
-
-@fixed_hash
-def hash_function(function: Callable):
-    return hash(function)
+from ezpyp.utils import (
+    MissingDependency,
+    RepeatedStepError,
+    SchemaConflictError,
+    InitializationError,
+    NotExecutedStepWarning,
+    UnrecognizedStepWarning,
+    SkippedStepWarning,
+    FailedStepWarning,
+    track_function_source,
+    fixed_hash,
+)
 
 
 class _Cache:
@@ -342,18 +329,6 @@ class PlaceHolder:
         return self._update()
 
 
-class RepeatedStepError(Exception):
-    pass
-
-
-class SchemaConflictError(Exception):
-    pass
-
-
-class InitializationError(Exception):
-    pass
-
-
 class _Pipeline:
     def __init__(self, cache_location: Path, pipeline_id: str):
         self.phases: Dict[int, List[PickleStep | DillStep | NumpyStep]] = {}
@@ -470,22 +445,6 @@ class _Pipeline:
     def __hash__(self):
         schema_str = str(self.get_schema())
         return hash(schema_str)
-
-
-class NotExecutedStepWarning(UserWarning):
-    pass
-
-
-class UnrecognizedStepWarning(UserWarning):
-    pass
-
-
-class SkippedStepWarning(UserWarning):
-    pass
-
-
-class FailedStepWarning(UserWarning):
-    pass
 
 
 class SerialPipeline(_Pipeline):
@@ -708,63 +667,3 @@ def as_numpy_step(
     depends_on: List[PickleStep | DillStep | NumpyStep] = [],
 ):
     return _as_step("numpy", pipeline, depends_on)
-
-
-if __name__ == "__main__":
-    pipeline = SerialPipeline(Path.cwd(), "test")
-
-    @as_pickle_step(pipeline)
-    def a():
-        return 1
-
-    step_a = a()
-
-    @as_pickle_step(pipeline)
-    def b():
-        return 2
-
-    step_b = b()
-
-    @as_pickle_step(pipeline, depends_on=[step_a, step_b])
-    def c(alpha, beta):
-        return alpha + beta
-
-    step_c = c(PlaceHolder(step_a), PlaceHolder(step_b))
-
-    @as_pickle_step(pipeline, depends_on=[step_c])
-    def d(gamma, n):
-        return gamma**n
-
-    step_d = d(PlaceHolder(step_c), 3)
-
-    @as_pickle_step(pipeline, depends_on=[step_d, step_a])
-    def e(delta, alpha):
-        return delta * alpha
-
-    step_e = e(PlaceHolder(step_d), PlaceHolder(step_a))
-
-    @as_pickle_step(pipeline, depends_on=[step_c])
-    def x(gamma, q):
-        return gamma - q
-
-    step_x = x(PlaceHolder(step_c), 34)
-
-    @as_pickle_step(pipeline, depends_on=[step_x])
-    def y(chi):
-        return chi / 2
-
-    step_y = y(PlaceHolder(step_x))
-
-    @as_pickle_step(pipeline, depends_on=[step_e, step_x])
-    def z(eta, chi):
-        return eta / chi
-
-    step_z = z(PlaceHolder(step_e), PlaceHolder(step_x))
-
-    pipeline.organize_steps()
-
-    print(pipeline.phases)
-
-    pipeline.execute()
-
-    schema = pipeline.get_schema()

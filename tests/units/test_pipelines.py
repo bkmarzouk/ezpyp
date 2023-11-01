@@ -3,8 +3,10 @@ import pytest
 from ezpyp.pipe import (
     SerialPipeline,
     as_pickle_step,
-    RepeatedStepError,
     PlaceHolder,
+)
+from ezpyp.utils import (
+    RepeatedStepError,
     SchemaConflictError,
     InitializationError,
     NotExecutedStepWarning,

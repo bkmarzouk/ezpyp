@@ -4,12 +4,12 @@ from ezpyp.pipe import (
     DillCache,
     PickleCache,
     NumpyCache,
-    MissingDependency,
     DillStep,
     PickleStep,
     NumpyStep,
     PlaceHolder,
 )
+from ezpyp.utils import MissingDependency
 from pickle import PicklingError
 from types import LambdaType
 import numpy as np
