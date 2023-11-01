@@ -162,6 +162,10 @@ def test_schema_initialization(tmp_path):
         return x**2
 
     a(3)
+
+    with pytest.raises(InitializationError):
+        pipeline.get_schema()
+
     pipeline.initialize_schema()
 
     assert pipeline.schema_path.exists()
@@ -180,25 +184,35 @@ def test_schema_initialization(tmp_path):
 
 
 def test_incompatible_schemas(tmp_path):
-    pipeline_a = SerialPipeline(tmp_path, "A")
-    pipeline_b = SerialPipeline(tmp_path, "B")
+    for ii in range(2):
+        pipeline = SerialPipeline(tmp_path, "a")
 
-    @as_pickle_step(pipeline=pipeline_a, depends_on=[])
+        @as_pickle_step(pipeline=pipeline, depends_on=[])
+        def a(x):
+            return x**2
+
+        a(1)
+
+        if ii == 0:
+            pipeline.initialize_schema()
+            del pipeline, a
+
+    pipeline = SerialPipeline(tmp_path, "a")
+
+    @as_pickle_step(pipeline=pipeline, depends_on=[])
     def a(x):
         return x**2
 
     a(1)
 
-    @as_pickle_step(pipeline=pipeline_b, depends_on=[])
-    def a(x):
+    @as_pickle_step(pipeline=pipeline, depends_on=[])
+    def b(x):
         return x**3
 
-    a(1)
-
-    pipeline_a.initialize_schema()
+    b(12)
 
     with pytest.raises(SchemaConflictError):
-        pipeline_b.initialize_schema()
+        pipeline.initialize_schema()
 
 
 def test_summary(tmp_path):

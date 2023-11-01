@@ -1,3 +1,4 @@
+import inspect
 from copy import deepcopy
 from typing import Any, List, Callable, Dict
 from pathlib import Path
@@ -5,12 +6,33 @@ import pickle
 import dill
 import numpy as np
 import json
-import hashlib
+import os
 from warnings import warn
+
+_EZPYP_HASH = str(3743294)
+
+
+def track_function_source():
+    return os.environ.get("_TRACK_FUNCTION_SOURCE", "False") == "True"
 
 
 class MissingDependency(Exception):
     pass
+
+
+def fixed_hash(function):
+    def tmp_fixed_hash(*args, **kwargs):
+        os.environ["PYTHONHASHSEED"] = _EZPYP_HASH
+        out = function(*args, **kwargs)
+        del os.environ["PYTHONHASHSEED"]
+        return out
+
+    return tmp_fixed_hash
+
+
+@fixed_hash
+def hash_function(function: Callable):
+    return hash(function)
 
 
 class _Cache:
@@ -94,12 +116,12 @@ class _Step:
         )
 
     def __eq__(self, other):
-        # TODO: This should be improved at some point but will help with
-        #       uniqueness at least for now.
-        return self.name == other.name
+        return hash(self) == hash(other)
 
+    @fixed_hash
     def __hash__(self):
-        return hash(self.name)
+        schema_str = str(self.get_schema())
+        return hash(schema_str)
 
     @staticmethod
     def _load_object(object_path: Path) -> Any:
@@ -197,7 +219,10 @@ class _Step:
         core["cache_location"] = str(core["cache_location"])
         core["function_name"] = core["function"].__name__
         core["function_bytes"] = core["function"].__code__.co_code.__str__()
-        core["function_hash"] = hash(self.function)
+
+        if track_function_source():
+            core["function_source"] = inspect.getsource(self.function)
+        # core["function_hash"] = hash_function(self.function) #... nope
         del core["function"]
 
         # Make sense of step and placeholder instances
@@ -218,7 +243,7 @@ class _Step:
             else "N/A"
         )
 
-        return "\t".join(data_to_summarize.values()) + "\n"
+        return "\t\t".join(data_to_summarize.values()) + "\n"
 
 
 class PickleStep(PickleCache, _Step):
@@ -300,13 +325,6 @@ class NumpyStep(NumpyCache, _Step):
 
     def __repr__(self):
         return str(self)
-
-
-def hash_schema(schema_path: Path):
-    with open(schema_path, "r") as f:
-        schema_str = f.read()
-
-    return hashlib.md5(bytes(schema_str, encoding="utf-8")).hexdigest()
 
 
 class PlaceHolder:
@@ -391,21 +409,26 @@ class _Pipeline:
     def execute(self, *args, **kwargs):
         pass
 
-    def lock_step(self, current_phase, active_step):
+    def lock_step(self, *args, **kwargs):
         pass
 
-    def unlock_step(self, current_phase, active_step):
+    def unlock_step(self, *args, **kwargs):
         pass
 
     def write_error_report(self, *args, **kwargs):
         pass
 
     def get_schema(self):
-        raw_schema: Dict[str, List[Dict[str, str]]] = {}
+        phases_schema: Dict[str, List[Dict[str, str]]] = {}
         for key, steps in self.phases.items():
-            raw_schema[str(key)] = [s.get_schema() for s in steps]
+            phases_schema[str(key)] = [s.get_schema() for s in steps]
 
-        return raw_schema
+        # pipeline_schema = {"pipeline_id": self.pipeline_id}.update(phases_schema)
+
+        if phases_schema == {}:
+            raise InitializationError("Schema contains no data from phases")
+
+        return phases_schema  # pipeline_schema
 
     def initialize_schema(self):
         self.organize_steps()
@@ -443,6 +466,11 @@ class _Pipeline:
     def finalize(self, *args, **kwargs):
         pass
 
+    @fixed_hash
+    def __hash__(self):
+        schema_str = str(self.get_schema())
+        return hash(schema_str)
+
 
 class NotExecutedStepWarning(UserWarning):
     pass
@@ -463,6 +491,20 @@ class FailedStepWarning(UserWarning):
 class SerialPipeline(_Pipeline):
     def __init__(self, cache_location: Path, pipeline_id: str):
         super().__init__(cache_location, pipeline_id)
+
+    def build_lock_data(self, current_phase, active_step):
+        data = {
+            "scheme_hash": hash(self),
+            "phase": current_phase,
+            "active": hash(active_step),
+        }
+        print(data)
+
+    def lock_step(self, current_phase, active_step):
+        pass
+
+    def unlock_step(self, current_phase, active_step):
+        pass
 
     def execute(self, *args, **kwargs):
         self.initialize_schema()
@@ -504,7 +546,9 @@ class SerialPipeline(_Pipeline):
         header = f"Pipeline {desc} @ {self.cache_location}\n\n"
 
         cols = (
-            "\t".join(["name", "args", "kwargs", "phase", "status", "result"])
+            "\t\t".join(
+                ["name", "args", "kwargs", "phase", "status", "result"]
+            )
             + "\n"
         )
 
@@ -522,10 +566,10 @@ class SerialPipeline(_Pipeline):
         for step in self.steps:
             if step.name == step_name:
                 try:
-                    print(f"attempting to load result for {step}")
+                    # print(f"attempting to load result for {step}")
                     return step._load_result()
                 except FileNotFoundError:
-                    print(f"FileNotFound for {step}")
+                    # print(f"FileNotFound for {step}")
                     step_status = step.get_status()
 
                     if step_status == -1:
