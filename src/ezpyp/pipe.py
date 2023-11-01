@@ -5,6 +5,7 @@ import pickle
 import dill
 import numpy as np
 import json
+import hashlib
 from warnings import warn
 
 
@@ -299,6 +300,13 @@ class NumpyStep(NumpyCache, _Step):
 
     def __repr__(self):
         return str(self)
+
+
+def hash_schema(schema_path: Path):
+    with open(schema_path, "r") as f:
+        schema_str = f.read()
+
+    return hashlib.md5(bytes(schema_str, encoding="utf-8")).hexdigest()
 
 
 class PlaceHolder:
