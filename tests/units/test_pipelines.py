@@ -1,9 +1,6 @@
 import pytest
 
-from ezpyp.pipe import (
-    SerialPipeline,
-    as_pickle_step,
-)
+from ezpyp import SerialPipeline, as_pickle_step
 from ezpyp.steps import PlaceHolder
 from ezpyp.utils import (
     RepeatedStepError,
