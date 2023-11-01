@@ -1,20 +1,12 @@
-import pytest
-from ezpyp.pipe import (
-    expand_dependencies,
-    reduce_dependencies,
-    _Step,
-    DillCache,
-    PickleCache,
-    NumpyCache,
-    MissingDependency,
-    DillStep,
-    PickleStep,
-    NumpyStep,
-)
 from pickle import PicklingError
 from types import LambdaType
+
 import numpy as np
-from pathlib import Path
+import pytest
+
+from ezpyp.cache import DillCache, NumpyCache, PickleCache
+from ezpyp.steps import DillStep, NumpyStep, PickleStep, PlaceHolder, _Step
+from ezpyp.utils import MissingDependency
 
 # Objects to pass cache/load tests
 pass_obj_pickle = ([1, 2], "foo", ("bar", "pizza"))
@@ -120,8 +112,8 @@ def test_step_get_path(tmp_path):
         extra_suffix="",
     )
     assert step._get_object_path("foo") == tmp_path / f"{step_name}.foo"
-    assert step.get_results_path() == tmp_path / f"{step_name}.step"
-    assert step.get_status_path() == tmp_path / f"{step_name}.status"
+    assert step._results_path() == tmp_path / f"{step_name}.step"
+    assert step._status_path() == tmp_path / f"{step_name}.status"
 
 
 def test_step_get_path_npy(tmp_path):
@@ -134,8 +126,8 @@ def test_step_get_path_npy(tmp_path):
         function=lambda x: None,
         depends_on=[],
     )
-    assert npy_step.get_results_path() == tmp_path / f"{step_name}.step.npy"
-    assert npy_step.get_status_path() == tmp_path / f"{step_name}.status.npy"
+    assert npy_step._results_path() == tmp_path / f"{step_name}.step.npy"
+    assert npy_step._status_path() == tmp_path / f"{step_name}.status.npy"
 
 
 def quick_step(*args, **kwargs):
@@ -143,23 +135,21 @@ def quick_step(*args, **kwargs):
 
 
 def test_check_ready(tmp_path):
-    step_name = "test"
-
-    for step_class in (quick_step, DillStep, PickleStep, NumpyStep):
+    for step_class in (DillStep, PickleStep, NumpyStep):
         base_step = step_class(
             cache_location=tmp_path,
-            name=step_name,
+            name=f"base_{step_class.__name__}",
             args=[],
             kwargs={},
             function=lambda x: None,
             depends_on=[],
         )
 
-        assert base_step.status == -1
+        assert base_step.get_status() == -1
 
         next_step = step_class(
             cache_location=tmp_path,
-            name=step_name,
+            name="next",
             args=[],
             kwargs={},
             function=lambda x: None,
@@ -171,17 +161,22 @@ def test_check_ready(tmp_path):
             next_step.check_ready()
 
         # Overwrite initialised value to mimic completion
-        base_step.status = 0
+        base_step._cache_status(0)
+
+        # Now the next step check ready should be OK
         next_step.check_ready()
 
+        # We can build another step
         another_step = step_class(
             cache_location=tmp_path,
-            name=step_name,
+            name="another",
             args=[],
             kwargs={},
             function=lambda x: None,
             depends_on=[next_step, base_step],
         )
+
+        assert another_step.get_status() == -1
 
         # Partially completed steps should also be invalid
         with pytest.raises(MissingDependency):
@@ -234,7 +229,7 @@ def test_cache_and_load_result(tmp_path, function, args, kwargs, result):
 
         # No dependencies, so should be fine!
         step.check_ready()
-        assert step.status == -1
+        assert step.get_status() == -1
 
         direct_calculation = step.get_result()
         cached_calculation = step.get_result()
@@ -244,104 +239,14 @@ def test_cache_and_load_result(tmp_path, function, args, kwargs, result):
             assert (cached_calculation == result).all()
         else:
             assert direct_calculation == cached_calculation == result
-        assert step.status == 0
+        assert step.get_status() == 0
 
 
-class TestDependencyExpansion:
-    @staticmethod
-    def test_empty_deps():
-        assert expand_dependencies([]) == []
+def test_placeholder(tmp_path):
+    base_step = PickleStep(
+        tmp_path, "base", [2], {}, lambda x: x, depends_on=[]
+    )
 
-    @staticmethod
-    def test_no_deps():
-        s1 = PickleStep(Path.cwd(), "test", [], {}, lambda x: None, [])
-        assert expand_dependencies([s1]) == [s1]
+    tmp = PlaceHolder(base_step)
 
-    @staticmethod
-    def test_linear_deps():
-        s1 = PickleStep(Path.cwd(), "s1", [], {}, lambda x: None, [])
-        s2 = PickleStep(Path.cwd(), "s2", [], {}, lambda x: None, [s1])
-        assert expand_dependencies([s2]) == [s2, s1]
-
-        s3 = PickleStep(Path.cwd(), "s3", [], {}, lambda x: None, [s2])
-        assert expand_dependencies([s3]) == [s3, s2, s1]
-
-        s4 = PickleStep(Path.cwd(), "s4", [], {}, lambda x: None, [s2, s3])
-        assert expand_dependencies([s4]) == [s4, s2, s1, s3, s2, s1]
-
-    @staticmethod
-    def test_branched_deps():
-        root = PickleStep(Path.cwd(), "root", [], {}, lambda x: None, [])
-
-        a1 = PickleStep(Path.cwd(), "a1", [], {}, lambda x: None, [root])
-        a2 = PickleStep(Path.cwd(), "a2", [], {}, lambda x: None, [a1])
-        a3 = PickleStep(Path.cwd(), "a3", [], {}, lambda x: None, [a2])
-
-        b1 = PickleStep(Path.cwd(), "b1", [], {}, lambda x: None, [root])
-
-        final = PickleStep(
-            Path.cwd(), "final", [], {}, lambda x: None, [a3, b1]
-        )
-
-        assert expand_dependencies([final]) == [
-            final,
-            a3,
-            a2,
-            a1,
-            root,
-            b1,
-            root,
-        ]
-
-        reduce_dependencies(expand_dependencies([final]))
-
-
-class TestDependencyReduction:
-    @staticmethod
-    def test_empty_deps():
-        assert reduce_dependencies([]) == []
-
-    @staticmethod
-    def test_linear_deps():
-        s1 = PickleStep(Path.cwd(), "s1", [], {}, lambda x: None, [])
-        s2 = PickleStep(Path.cwd(), "s2", [], {}, lambda x: None, [s1])
-        s3 = PickleStep(Path.cwd(), "s3", [], {}, lambda x: None, [s2])
-        s4 = PickleStep(Path.cwd(), "s4", [], {}, lambda x: None, [s2, s3])
-        assert reduce_dependencies([s4, s2, s1, s3, s2, s1]) == [
-            s4,
-            s3,
-            s2,
-            s1,
-        ]
-
-    @staticmethod
-    def test_branched_deps():
-        root = PickleStep(Path.cwd(), "root", [], {}, lambda x: None, [])
-
-        a1 = PickleStep(Path.cwd(), "a1", [], {}, lambda x: None, [root])
-        a2 = PickleStep(Path.cwd(), "a2", [], {}, lambda x: None, [a1])
-        a3 = PickleStep(Path.cwd(), "a3", [], {}, lambda x: None, [a2])
-
-        b1 = PickleStep(Path.cwd(), "b1", [], {}, lambda x: None, [root])
-
-        final = PickleStep(
-            Path.cwd(), "final", [], {}, lambda x: None, [a3, b1]
-        )
-
-        assert reduce_dependencies(
-            [
-                final,
-                a3,
-                a2,
-                a1,
-                b1,
-                root,
-            ]
-        ) == [
-            final,
-            a3,
-            a2,
-            a1,
-            b1,
-            root,
-        ]
+    assert tmp.get_result() == 2
