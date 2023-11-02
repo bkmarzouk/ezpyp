@@ -28,7 +28,7 @@ jobs:
           ruff --target-version=py311 --line-length 90 ./
       - name: Style check with black
         run: |
-          black ./ --check --line-length 90
+          black ./ --check --line-length 79
       - name: Run unit tests with pytest
         run: |
           pytest -s tests/units
