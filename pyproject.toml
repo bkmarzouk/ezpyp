@@ -15,7 +15,8 @@ maintainers = [
 requires-python = ">=3.10"
 dependencies = [
     "dill",
-    "numpy"
+    "numpy",
+    "mpi4py"
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",

@@ -15,6 +15,7 @@ from ezpyp.utils import (
     UnrecognizedStepWarning,
     fixed_hash,
     _MPI,
+    item_selection,
 )
 
 try:
@@ -23,11 +24,11 @@ except ImportError:
     print("-- Unable to import mpi4py, procs will be serial")
     MPI = _MPI()
 
-comm = MPI.COMM_WORLD
-barrier = comm.Barrier
+_COMM = MPI.COMM_WORLD
+_MPI_RANK = _COMM.Get_rank()
+_MPI_SIZE = _COMM.Get_size()
+barrier = _COMM.Barrier
 finalize = MPI.Finalize
-mpi_rank = comm.Get_rank()
-mpi_size = comm.Get_size()
 
 
 class _Pipeline:
@@ -165,7 +166,8 @@ class SerialPipeline(_Pipeline):
         return lock_data
 
     def get_lock_path(self, done=False):
-        return self.cache_location.joinpath("step").with_suffix(
+        process_id = "_proc_%03d" % _MPI_RANK
+        return self.cache_location.joinpath(f"step{process_id}").with_suffix(
             ".done" if done else ".active"
         )
 
@@ -196,7 +198,11 @@ class SerialPipeline(_Pipeline):
             current_phase = self.phases[phase_index]
             error_in_current_phase = False
 
-            for step in current_phase:
+            current_process_steps = item_selection(
+                current_phase, _MPI_RANK, _MPI_SIZE
+            )
+
+            for step in current_process_steps:
                 self.lock_step(phase_index, step)
 
                 step.execute(
@@ -333,3 +339,7 @@ def as_numpy_step(
     depends_on: List[PickleStep | DillStep | NumpyStep] = [],
 ):
     return _as_step("numpy", pipeline, depends_on)
+
+
+if __name__ == "__main__":
+    print(_MPI_RANK + 1, "/", _MPI_SIZE)

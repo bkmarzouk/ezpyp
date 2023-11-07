@@ -76,3 +76,35 @@ class _MPI:
     @staticmethod
     def Finalize():
         pass
+
+
+def item_selection(
+    items_to_distribute: list | dict, mpi_rank: int, mpi_size: int
+):
+    if isinstance(items_to_distribute, dict):
+        items_to_distribute = list(items_to_distribute.keys())
+
+    if mpi_size == 1:
+        return items_to_distribute
+
+    n_items_to_distribute = len(items_to_distribute)
+    min_items_per_proc = (
+        n_items_to_distribute // mpi_size
+    )  # Populates list with min. number of items chose by int. div.
+    rem_items_to_distribute = (
+        n_items_to_distribute % mpi_size
+    )  # Find num. of remaining items with mod. div. and pop. lists
+
+    items_for_current_proc = []
+
+    for i in range(mpi_size):
+        items_for_current_proc += items_to_distribute[
+            i * min_items_per_proc : (i + 1) * min_items_per_proc
+        ]
+
+    if rem_items_to_distribute > 0:
+        for j in range(rem_items_to_distribute):
+            extra = items_to_distribute[min_items_per_proc * mpi_size + j]
+            items_for_current_proc[j].append(extra)
+
+    return items_for_current_proc[mpi_rank]
