@@ -39,4 +39,4 @@ jobs:
           pytest -s tests/units
       - name: Run tests with pytest (parallel)
         run: |
-          mpirun -n 2 --use-hwthread-cpus pytest -s tests/units --with-mpi
+          mpirun -n 2 pytest -s tests/units --with-mpi
