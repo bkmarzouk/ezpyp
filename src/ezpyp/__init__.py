@@ -85,6 +85,10 @@ class _Pipeline:
 
         self.phases = phases
 
+    @staticmethod
+    def barrier():
+        mpi_barrier()
+
     def execute(self, *args, **kwargs):
         pass
 
@@ -99,8 +103,8 @@ class _Pipeline:
 
     def get_schema(self):
         phases_schema: Dict[str, List[Dict[str, str]]] = {}
-        for key, steps in self.phases.items():
-            phases_schema[str(key)] = [s.get_schema() for s in steps]
+        for key, phase_steps in self.phases.items():
+            phases_schema[str(key)] = [s.get_schema() for s in phase_steps]
 
         # pipeline_schema = {"pipeline_id": self.pipeline_id}.update(phases_schema)
 
@@ -112,33 +116,48 @@ class _Pipeline:
     def initialize_schema(self):
         self.organize_steps()
 
-        current_schema = self.get_schema()
+        if _MPI_RANK == 0:
+            current_schema = self.get_schema()
+            error = None
+            if self.schema_path.exists():
+                with open(self.schema_path, "r") as f:
+                    existing_schema = json.load(f)
 
-        if self.schema_path.exists():
-            with open(self.schema_path, "r") as f:
-                existing_schema = json.load(f)
+                if current_schema.keys() != existing_schema.keys():
+                    error = SchemaConflictError(
+                        f"Existing schema contains a different number of "
+                        f"computational phases compared to those defined in this "
+                        f"pipeline: {current_schema.keys()} != "
+                        f"{existing_schema.keys}"
+                    )
+                else:
+                    for phase_index in current_schema:
+                        for step_schema in current_schema[phase_index]:
+                            if step_schema not in existing_schema[phase_index]:
+                                error = SchemaConflictError(
+                                    f"Schema step '{step_schema}' does not belong to "
+                                    f"existing schema file '{self.schema_path}'.\n"
+                                    f"In order to run the pipeline with different "
+                                    f"definitions define a different cache_location, "
+                                    f"or clear the existing cache data."
+                                )
 
-            if current_schema.keys() != existing_schema.keys():
-                raise SchemaConflictError(
-                    f"Existing schema contains a different number of "
-                    f"computational phases compared to those defined in this "
-                    f"pipeline: {current_schema.keys()} != "
-                    f"{existing_schema.keys}"
-                )
+            if error is None:
+                with open(self.schema_path, "w") as f:
+                    json.dump(current_schema, f, indent=2, sort_keys=True)
 
-            for phase_index in current_schema:
-                for step_schema in current_schema[phase_index]:
-                    if step_schema not in existing_schema[phase_index]:
-                        raise SchemaConflictError(
-                            f"Schema step '{step_schema}' does not belong to "
-                            f"existing schema file '{self.schema_path}'.\n"
-                            f"In order to run the pipeline with different "
-                            f"definitions define a different cache_location, "
-                            f"or clear the existing cache data."
-                        )
+            for ii in range(1, _MPI_SIZE):
+                _COMM.send(error, dest=ii)
 
-        with open(self.schema_path, "w") as f:
-            json.dump(current_schema, f, indent=2, sort_keys=True)
+        else:
+            error = _COMM.recv(source=0)
+
+        if error is not None:
+            raise error
+
+        # print("error", error, "rank", _MPI_RANK)
+
+        mpi_barrier()
 
         self._initialized_schema = True
 
@@ -227,6 +246,7 @@ class SerialPipeline(_Pipeline):
         self._execution_complete = True
         mpi_barrier()
         self.finalize()
+        mpi_barrier()
         # mpi_finalize()
 
     @as_single_process(_MPI_RANK)
