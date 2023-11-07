@@ -39,8 +39,8 @@ def test_attachment(tmp_path):
         bar()
 
 
-def test_pipeline_with_no_dependencies(tmp_path):
-    pipeline = SerialPipeline(tmp_path, "simple")
+def test_pipeline_with_no_dependencies(comm_tmp_path):
+    pipeline = SerialPipeline(comm_tmp_path, "simple")
 
     @as_pickle_step(pipeline=pipeline, depends_on=[])
     def foo():

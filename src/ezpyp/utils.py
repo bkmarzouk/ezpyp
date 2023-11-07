@@ -1,4 +1,5 @@
 import os
+from copy import deepcopy
 from typing import Callable
 
 
@@ -80,43 +81,34 @@ class _MPI:
 
 def item_selection(
     items_to_distribute: list | dict, mpi_rank: int, mpi_size: int
-):
+) -> list:
     if isinstance(items_to_distribute, dict):
         items_to_distribute = list(items_to_distribute.keys())
 
     if mpi_size == 1:
         return items_to_distribute
 
-    n_items_to_distribute = len(items_to_distribute)
-    min_items_per_proc = (
-        n_items_to_distribute // mpi_size
-    )  # Populates list with min. number of items chose by int. div.
-    rem_items_to_distribute = (
-        n_items_to_distribute % mpi_size
-    )  # Find num. of remaining items with mod. div. and pop. lists
+    items_to_distribute = deepcopy(items_to_distribute)
 
-    items_for_current_proc = []
+    current_idx = 0
+    output = {k: [] for k in range(mpi_size)}
 
-    for i in range(mpi_size):
-        items_for_current_proc += items_to_distribute[
-            i * min_items_per_proc : (i + 1) * min_items_per_proc
-        ]
+    while items_to_distribute:
+        if current_idx == mpi_size:
+            current_idx = 0
 
-    if rem_items_to_distribute > 0:
-        for j in range(rem_items_to_distribute):
-            extra = items_to_distribute[min_items_per_proc * mpi_size + j]
-            items_for_current_proc[j].append(extra)
+        output[current_idx].append(items_to_distribute.pop(0))
 
-    return items_for_current_proc[mpi_rank]
+        current_idx += 1
+
+    return output[mpi_rank]
 
 
-def as_single_process(current_proc: int, executing_proc: int):
+def as_single_process(current_proc: int, executing_proc: int = 0):
     def decorator(function: Callable):
         def wrapper(*args, **kwargs):
             if current_proc == executing_proc:
                 return function(*args, **kwargs)
-            else:
-                print("not for me", current_proc)
 
         return wrapper
 

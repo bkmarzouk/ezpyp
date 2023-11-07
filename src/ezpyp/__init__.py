@@ -17,6 +17,7 @@ from ezpyp.utils import (
     _MPI,
     item_selection,
     get_skip_downstream_condition,
+    as_single_process,
 )
 
 try:
@@ -28,8 +29,8 @@ except ImportError:
 _COMM = MPI.COMM_WORLD
 _MPI_RANK = _COMM.Get_rank()
 _MPI_SIZE = _COMM.Get_size()
-barrier = _COMM.Barrier
-finalize = MPI.Finalize
+mpi_barrier = _COMM.Barrier
+mpi_finalize = MPI.Finalize
 
 
 class _Pipeline:
@@ -191,11 +192,6 @@ class SerialPipeline(_Pipeline):
         skip_downstream_phases = False
 
         for phase_index in sorted(self.phases.keys()):
-            print(
-                "[Executing pipeline phase %02d/%02d]"
-                % (phase_index, len(self.phases) - 1)
-            )
-
             current_phase_steps = self.phases[phase_index]
             error_in_current_phase = False
 
@@ -204,6 +200,12 @@ class SerialPipeline(_Pipeline):
             )
 
             for step in steps_for_process:
+                print(
+                    f"[Executing step '{step}' of phase {phase_index}] [MPI process @ {_MPI_RANK}]"
+                )
+
+                # print(self.get_lock_path())
+
                 self.lock_step(phase_index, step)
 
                 step.execute(
@@ -217,14 +219,17 @@ class SerialPipeline(_Pipeline):
 
                 self.unlock_step()
 
-            barrier()
+            mpi_barrier()
             skip_downstream_phases = get_skip_downstream_condition(
                 current_phase_steps
             )
 
         self._execution_complete = True
+        mpi_barrier()
         self.finalize()
+        # mpi_finalize()
 
+    @as_single_process(_MPI_RANK)
     def finalize(self, *args, **kwargs):
         assert self._execution_complete
 
@@ -290,14 +295,9 @@ class SerialPipeline(_Pipeline):
         return None
 
 
-class ParallelPipeline(_Pipeline):
-    def __init__(self, cache_location: Path, pipeline_id: str):
-        super().__init__(cache_location, pipeline_id)
-
-
 def _as_step(
     step_type: str,
-    pipeline: SerialPipeline | ParallelPipeline,
+    pipeline: SerialPipeline,
     depends_on: List[PickleStep | DillStep | NumpyStep] = [],
 ):
     def decorator(function):
@@ -327,21 +327,21 @@ def _as_step(
 
 
 def as_pickle_step(
-    pipeline: SerialPipeline | ParallelPipeline,
+    pipeline: SerialPipeline,
     depends_on: List[PickleStep | DillStep | NumpyStep] = [],
 ):
     return _as_step("pickle", pipeline, depends_on)
 
 
 def as_dill_step(
-    pipeline: SerialPipeline | ParallelPipeline,
+    pipeline: SerialPipeline,
     depends_on: List[PickleStep | DillStep | NumpyStep] = [],
 ):
     return _as_step("dill", pipeline, depends_on)
 
 
 def as_numpy_step(
-    pipeline: SerialPipeline | ParallelPipeline,
+    pipeline: SerialPipeline,
     depends_on: List[PickleStep | DillStep | NumpyStep] = [],
 ):
     return _as_step("numpy", pipeline, depends_on)
