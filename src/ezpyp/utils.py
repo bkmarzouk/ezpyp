@@ -54,3 +54,25 @@ def fixed_hash(function):
 @fixed_hash
 def hash_function(function: Callable):
     return hash(function)
+
+
+class _Comm:
+    @staticmethod
+    def Barrier():
+        pass
+
+    @staticmethod
+    def Get_rank():
+        return 0
+
+    @staticmethod
+    def Get_size():
+        return 1
+
+
+class _MPI:
+    COMM_WORLD = _Comm()
+
+    @staticmethod
+    def Finalize():
+        pass

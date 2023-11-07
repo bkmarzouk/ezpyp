@@ -14,7 +14,20 @@ from ezpyp.utils import (
     SkippedStepWarning,
     UnrecognizedStepWarning,
     fixed_hash,
+    _MPI,
 )
+
+try:
+    from mpi4py import MPI
+except ImportError:
+    print("-- Unable to import mpi4py, procs will be serial")
+    MPI = _MPI()
+
+comm = MPI.COMM_WORLD
+barrier = comm.Barrier
+finalize = MPI.Finalize
+mpi_rank = comm.Get_rank()
+mpi_size = comm.Get_size()
 
 
 class _Pipeline:
@@ -266,7 +279,8 @@ class SerialPipeline(_Pipeline):
 
 
 class ParallelPipeline(_Pipeline):
-    pass  # TODO: Implement
+    def __init__(self, cache_location: Path, pipeline_id: str):
+        super().__init__(cache_location, pipeline_id)
 
 
 def _as_step(
