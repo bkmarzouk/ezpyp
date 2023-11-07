@@ -35,13 +35,15 @@ dev = [
     "pytest",
     "pytest-dependency",
     "pre-commit",
-    "isort"
+    "isort",
+    "pytest-mpi",
 ]
 ci = [
     "black",
     "ruff",
     "pytest",
     "pytest-dependency",
+    "pytest-mpi",
 ]
 
 [tool.hatch]
