@@ -216,6 +216,8 @@ class SerialPipeline(_Pipeline):
 
                 self.unlock_step()
 
+            barrier()
+
         self._execution_complete = True
         self.finalize()
 

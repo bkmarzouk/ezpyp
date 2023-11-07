@@ -110,11 +110,27 @@ def item_selection(
     return items_for_current_proc[mpi_rank]
 
 
-def as_single_process(
-    function: Callable, current_proc: int, executing_proc: int
-):
-    def wrapper(*args, **kwargs):
-        if current_proc == executing_proc:
-            return function(*args, **kwargs)
+def as_single_process(current_proc: int, executing_proc: int):
+    def decorator(function: Callable):
+        def wrapper(*args, **kwargs):
+            if current_proc == executing_proc:
+                return function(*args, **kwargs)
+            else:
+                print("not for me", current_proc)
 
-    return wrapper
+        return wrapper
+
+    return decorator
+
+
+if __name__ == "__main__":
+    from mpi4py import MPI
+
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+
+    @as_single_process(rank, 0)
+    def foo():
+        print(f"i am process {rank}")
+
+    foo()
