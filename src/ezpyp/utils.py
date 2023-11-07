@@ -108,3 +108,13 @@ def item_selection(
             items_for_current_proc[j].append(extra)
 
     return items_for_current_proc[mpi_rank]
+
+
+def as_single_process(
+    function: Callable, current_proc: int, executing_proc: int
+):
+    def wrapper(*args, **kwargs):
+        if current_proc == executing_proc:
+            return function(*args, **kwargs)
+
+    return wrapper
