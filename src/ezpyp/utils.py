@@ -123,6 +123,10 @@ def as_single_process(current_proc: int, executing_proc: int):
     return decorator
 
 
+def get_skip_downstream_condition(steps: list):
+    return any([s.get_status() > 0 for s in steps])
+
+
 if __name__ == "__main__":
     from mpi4py import MPI
 

@@ -16,6 +16,7 @@ from ezpyp.utils import (
     fixed_hash,
     _MPI,
     item_selection,
+    get_skip_downstream_condition,
 )
 
 try:
@@ -195,14 +196,14 @@ class SerialPipeline(_Pipeline):
                 % (phase_index, len(self.phases) - 1)
             )
 
-            current_phase = self.phases[phase_index]
+            current_phase_steps = self.phases[phase_index]
             error_in_current_phase = False
 
-            current_process_steps = item_selection(
-                current_phase, _MPI_RANK, _MPI_SIZE
+            steps_for_process = item_selection(
+                current_phase_steps, _MPI_RANK, _MPI_SIZE
             )
 
-            for step in current_process_steps:
+            for step in steps_for_process:
                 self.lock_step(phase_index, step)
 
                 step.execute(
@@ -217,6 +218,9 @@ class SerialPipeline(_Pipeline):
                 self.unlock_step()
 
             barrier()
+            skip_downstream_phases = get_skip_downstream_condition(
+                current_phase_steps
+            )
 
         self._execution_complete = True
         self.finalize()
