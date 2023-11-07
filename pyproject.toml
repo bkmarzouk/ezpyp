@@ -15,7 +15,8 @@ maintainers = [
 requires-python = ">=3.10"
 dependencies = [
     "dill",
-    "numpy"
+    "numpy",
+    "mpi4py"
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -34,13 +35,15 @@ dev = [
     "pytest",
     "pytest-dependency",
     "pre-commit",
-    "isort"
+    "isort",
+    "pytest-mpi",
 ]
 ci = [
     "black",
     "ruff",
     "pytest",
     "pytest-dependency",
+    "pytest-mpi",
 ]
 
 [tool.hatch]

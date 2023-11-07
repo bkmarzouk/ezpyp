@@ -1,6 +1,6 @@
 import pytest
 
-from ezpyp import SerialPipeline, as_pickle_step
+from ezpyp import Pipeline, as_pickle_step
 from ezpyp.steps import PlaceHolder
 from ezpyp.utils import (
     FailedStepWarning,
@@ -14,7 +14,7 @@ from ezpyp.utils import (
 
 
 def test_attachment(tmp_path):
-    pipeline = SerialPipeline(tmp_path, "yikes")
+    pipeline = Pipeline(tmp_path, "yikes")
 
     @as_pickle_step(pipeline=pipeline, depends_on=[])
     def foo():
@@ -39,8 +39,8 @@ def test_attachment(tmp_path):
         bar()
 
 
-def test_pipeline_with_no_dependencies(tmp_path):
-    pipeline = SerialPipeline(tmp_path, "simple")
+def test_pipeline_with_no_dependencies(comm_tmp_path):
+    pipeline = Pipeline(comm_tmp_path, "simple")
 
     @as_pickle_step(pipeline=pipeline, depends_on=[])
     def foo():
@@ -68,8 +68,8 @@ def test_pipeline_with_no_dependencies(tmp_path):
         assert step.get_result() == expected_result
 
 
-def test_pipeline_that_fails_with_no_dependencies(tmp_path):
-    pipeline = SerialPipeline(tmp_path, "simple")
+def test_pipeline_that_fails_with_no_dependencies(comm_tmp_path):
+    pipeline = Pipeline(comm_tmp_path, "simple")
 
     @as_pickle_step(pipeline=pipeline, depends_on=[])
     def foo(crash=True):
@@ -99,8 +99,8 @@ def test_pipeline_that_fails_with_no_dependencies(tmp_path):
     assert baz_step.get_status() == 2
 
 
-def test_pipeline_with_dependencies(tmp_path):
-    pipeline = SerialPipeline(tmp_path, "with_deps")
+def test_pipeline_with_dependencies(comm_tmp_path):
+    pipeline = Pipeline(comm_tmp_path, "with_deps")
 
     @as_pickle_step(pipeline=pipeline, depends_on=[])
     def foo():
@@ -128,8 +128,8 @@ def test_pipeline_with_dependencies(tmp_path):
         assert step.get_result() == expected_result
 
 
-def test_pipeline_with_dependency_subs(tmp_path):
-    pipeline = SerialPipeline(tmp_path, "with_subs")
+def test_pipeline_with_dependency_subs(comm_tmp_path):
+    pipeline = Pipeline(comm_tmp_path, "with_subs")
 
     @as_pickle_step(pipeline=pipeline, depends_on=[])
     def base():
@@ -153,8 +153,8 @@ def test_pipeline_with_dependency_subs(tmp_path):
         assert step.get_result() == expected_result
 
 
-def test_schema_initialization(tmp_path):
-    pipeline = SerialPipeline(tmp_path, "schema")
+def test_schema_initialization(comm_tmp_path):
+    pipeline = Pipeline(comm_tmp_path, "schema")
 
     @as_pickle_step(pipeline=pipeline, depends_on=[])
     def a(x):
@@ -164,6 +164,8 @@ def test_schema_initialization(tmp_path):
 
     with pytest.raises(InitializationError):
         pipeline.get_schema()
+
+    pipeline.barrier()
 
     pipeline.initialize_schema()
 
@@ -182,9 +184,9 @@ def test_schema_initialization(tmp_path):
     pipeline.initialize_schema()
 
 
-def test_incompatible_schemas(tmp_path):
+def test_incompatible_schemas(comm_tmp_path):
     for ii in range(2):
-        pipeline = SerialPipeline(tmp_path, "a")
+        pipeline = Pipeline(comm_tmp_path, "a")
 
         @as_pickle_step(pipeline=pipeline, depends_on=[])
         def a(x):
@@ -196,7 +198,7 @@ def test_incompatible_schemas(tmp_path):
             pipeline.initialize_schema()
             del pipeline, a
 
-    pipeline = SerialPipeline(tmp_path, "a")
+    pipeline = Pipeline(comm_tmp_path, "a")
 
     @as_pickle_step(pipeline=pipeline, depends_on=[])
     def a(x):
@@ -214,8 +216,8 @@ def test_incompatible_schemas(tmp_path):
         pipeline.initialize_schema()
 
 
-def test_summary(tmp_path):
-    pipeline = SerialPipeline(tmp_path, "simple")
+def test_summary(comm_tmp_path):
+    pipeline = Pipeline(comm_tmp_path, "simple")
 
     @as_pickle_step(pipeline)
     def x():
@@ -228,8 +230,8 @@ def test_summary(tmp_path):
     assert pipeline.summary_path.exists()  # TODO: do better...
 
 
-def test_get_result(tmp_path):
-    pipeline = SerialPipeline(tmp_path, "simple")
+def test_get_result(comm_tmp_path):
+    pipeline = Pipeline(comm_tmp_path, "simple")
 
     @as_pickle_step(pipeline)
     def x():

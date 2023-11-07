@@ -14,10 +14,26 @@ from ezpyp.utils import (
     SkippedStepWarning,
     UnrecognizedStepWarning,
     fixed_hash,
+    _MPI,
+    item_selection,
+    get_skip_downstream_condition,
+    as_single_process,
 )
 
+try:
+    from mpi4py import MPI
+except ImportError:
+    print("-- Unable to import mpi4py, procs will be serial")
+    MPI = _MPI()
 
-class _Pipeline:
+_COMM = MPI.COMM_WORLD
+_MPI_RANK = _COMM.Get_rank()
+_MPI_SIZE = _COMM.Get_size()
+mpi_barrier = _COMM.Barrier
+mpi_finalize = MPI.Finalize
+
+
+class Pipeline:
     def __init__(self, cache_location: Path, pipeline_id: str):
         self.phases: Dict[int, List[PickleStep | DillStep | NumpyStep]] = {}
         self.cache_location = cache_location
@@ -69,75 +85,9 @@ class _Pipeline:
 
         self.phases = phases
 
-    def execute(self, *args, **kwargs):
-        pass
-
-    def lock_step(self, *args, **kwargs):
-        pass
-
-    def unlock_step(self, *args, **kwargs):
-        pass
-
-    def write_error_report(self, *args, **kwargs):
-        pass
-
-    def get_schema(self):
-        phases_schema: Dict[str, List[Dict[str, str]]] = {}
-        for key, steps in self.phases.items():
-            phases_schema[str(key)] = [s.get_schema() for s in steps]
-
-        # pipeline_schema = {"pipeline_id": self.pipeline_id}.update(phases_schema)
-
-        if phases_schema == {}:
-            raise InitializationError("Schema contains no data from phases")
-
-        return phases_schema  # pipeline_schema
-
-    def initialize_schema(self):
-        self.organize_steps()
-
-        current_schema = self.get_schema()
-
-        if self.schema_path.exists():
-            with open(self.schema_path, "r") as f:
-                existing_schema = json.load(f)
-
-            if current_schema.keys() != existing_schema.keys():
-                raise SchemaConflictError(
-                    f"Existing schema contains a different number of "
-                    f"computational phases compared to those defined in this "
-                    f"pipeline: {current_schema.keys()} != "
-                    f"{existing_schema.keys}"
-                )
-
-            for phase_index in current_schema:
-                for step_schema in current_schema[phase_index]:
-                    if step_schema not in existing_schema[phase_index]:
-                        raise SchemaConflictError(
-                            f"Schema step '{step_schema}' does not belong to "
-                            f"existing schema file '{self.schema_path}'.\n"
-                            f"In order to run the pipeline with different "
-                            f"definitions define a different cache_location, "
-                            f"or clear the existing cache data."
-                        )
-
-        with open(self.schema_path, "w") as f:
-            json.dump(current_schema, f, indent=2, sort_keys=True)
-
-        self._initialized_schema = True
-
-    def finalize(self, *args, **kwargs):
-        pass
-
-    @fixed_hash
-    def __hash__(self):
-        schema_str = str(self.get_schema())
-        return hash(schema_str)
-
-
-class SerialPipeline(_Pipeline):
-    def __init__(self, cache_location: Path, pipeline_id: str):
-        super().__init__(cache_location, pipeline_id)
+    @staticmethod
+    def barrier():
+        mpi_barrier()
 
     def get_lock_data(
         self,
@@ -151,11 +101,6 @@ class SerialPipeline(_Pipeline):
         }
         return lock_data
 
-    def get_lock_path(self, done=False):
-        return self.cache_location.joinpath("step").with_suffix(
-            ".done" if done else ".active"
-        )
-
     def lock_step(
         self,
         current_phase: int,
@@ -168,22 +113,99 @@ class SerialPipeline(_Pipeline):
     def unlock_step(self):
         self.get_lock_path().rename(self.get_lock_path(done=True))
 
-    def execute(self, *args, **kwargs):
+    def write_error_report(self, *args, **kwargs):
+        pass
+
+    def get_schema(self):
+        phases_schema: Dict[str, List[Dict[str, str]]] = {}
+        for key, phase_steps in self.phases.items():
+            phases_schema[str(key)] = [s.get_schema() for s in phase_steps]
+
+        # pipeline_schema = {"pipeline_id": self.pipeline_id}.update(phases_schema)
+
+        if phases_schema == {}:
+            raise InitializationError("Schema contains no data from phases")
+
+        return phases_schema  # pipeline_schema
+
+    def initialize_schema(self):
+        self.organize_steps()
+
+        if _MPI_RANK == 0:
+            current_schema = self.get_schema()
+            error = None
+            if self.schema_path.exists():
+                with open(self.schema_path, "r") as f:
+                    existing_schema = json.load(f)
+
+                if current_schema.keys() != existing_schema.keys():
+                    error = SchemaConflictError(
+                        f"Existing schema contains a different number of "
+                        f"computational phases compared to those defined in this "
+                        f"pipeline: {current_schema.keys()} != "
+                        f"{existing_schema.keys}"
+                    )
+                else:
+                    for phase_index in current_schema:
+                        for step_schema in current_schema[phase_index]:
+                            if step_schema not in existing_schema[phase_index]:
+                                error = SchemaConflictError(
+                                    f"Schema step '{step_schema}' does not belong to "
+                                    f"existing schema file '{self.schema_path}'.\n"
+                                    f"In order to run the pipeline with different "
+                                    f"definitions define a different cache_location, "
+                                    f"or clear the existing cache data."
+                                )
+
+            if error is None:
+                with open(self.schema_path, "w") as f:
+                    json.dump(current_schema, f, indent=2, sort_keys=True)
+
+            for ii in range(1, _MPI_SIZE):
+                _COMM.send(error, dest=ii)
+
+        else:
+            error = _COMM.recv(source=0)
+
+        if error is not None:
+            raise error
+
+        mpi_barrier()
+
+        self._initialized_schema = True
+
+    @fixed_hash
+    def __hash__(self):
+        schema_str = str(self.get_schema())
+        return hash(schema_str)
+
+    def get_lock_path(self, done=False):
+        process_id = "_proc_%03d" % _MPI_RANK
+        return self.cache_location.joinpath(f"step{process_id}").with_suffix(
+            ".done" if done else ".active"
+        )
+
+    def execute(self):
         self.initialize_schema()
         self.organize_steps()
 
         skip_downstream_phases = False
 
         for phase_index in sorted(self.phases.keys()):
-            print(
-                "[Executing pipeline phase %02d/%02d]"
-                % (phase_index, len(self.phases) - 1)
-            )
-
-            current_phase = self.phases[phase_index]
+            current_phase_steps = self.phases[phase_index]
             error_in_current_phase = False
 
-            for step in current_phase:
+            steps_for_process = item_selection(
+                current_phase_steps, _MPI_RANK, _MPI_SIZE
+            )
+
+            for step in steps_for_process:
+                print(
+                    f"[Executing step '{step}' of phase {phase_index}] [MPI process @ {_MPI_RANK}]"
+                )
+
+                # print(self.get_lock_path())
+
                 self.lock_step(phase_index, step)
 
                 step.execute(
@@ -197,10 +219,19 @@ class SerialPipeline(_Pipeline):
 
                 self.unlock_step()
 
-        self._execution_complete = True
-        self.finalize()
+            mpi_barrier()
+            skip_downstream_phases = get_skip_downstream_condition(
+                current_phase_steps
+            )
 
-    def finalize(self, *args, **kwargs):
+        self._execution_complete = True
+        mpi_barrier()
+        self.finalize()
+        mpi_barrier()
+        # mpi_finalize()
+
+    @as_single_process(_MPI_RANK)
+    def finalize(self):
         assert self._execution_complete
 
         desc = "Failed" if self._pipeline_failed else "Completed"
@@ -228,10 +259,8 @@ class SerialPipeline(_Pipeline):
         for step in self.steps:
             if step.name == step_name:
                 try:
-                    # print(f"attempting to load result for {step}")
                     return step._load_result()
                 except FileNotFoundError:
-                    # print(f"FileNotFound for {step}")
                     step_status = step.get_status()
 
                     if step_status == -1:
@@ -265,13 +294,9 @@ class SerialPipeline(_Pipeline):
         return None
 
 
-class ParallelPipeline(_Pipeline):
-    pass  # TODO: Implement
-
-
 def _as_step(
     step_type: str,
-    pipeline: SerialPipeline | ParallelPipeline,
+    pipeline: Pipeline,
     depends_on: List[PickleStep | DillStep | NumpyStep] = [],
 ):
     def decorator(function):
@@ -301,21 +326,25 @@ def _as_step(
 
 
 def as_pickle_step(
-    pipeline: SerialPipeline | ParallelPipeline,
+    pipeline: Pipeline,
     depends_on: List[PickleStep | DillStep | NumpyStep] = [],
 ):
     return _as_step("pickle", pipeline, depends_on)
 
 
 def as_dill_step(
-    pipeline: SerialPipeline | ParallelPipeline,
+    pipeline: Pipeline,
     depends_on: List[PickleStep | DillStep | NumpyStep] = [],
 ):
     return _as_step("dill", pipeline, depends_on)
 
 
 def as_numpy_step(
-    pipeline: SerialPipeline | ParallelPipeline,
+    pipeline: Pipeline,
     depends_on: List[PickleStep | DillStep | NumpyStep] = [],
 ):
     return _as_step("numpy", pipeline, depends_on)
+
+
+if __name__ == "__main__":
+    print(_MPI_RANK + 1, "/", _MPI_SIZE)
