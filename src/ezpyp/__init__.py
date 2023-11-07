@@ -33,7 +33,7 @@ mpi_barrier = _COMM.Barrier
 mpi_finalize = MPI.Finalize
 
 
-class _Pipeline:
+class Pipeline:
     def __init__(self, cache_location: Path, pipeline_id: str):
         self.phases: Dict[int, List[PickleStep | DillStep | NumpyStep]] = {}
         self.cache_location = cache_location
@@ -89,14 +89,29 @@ class _Pipeline:
     def barrier():
         mpi_barrier()
 
-    def execute(self, *args, **kwargs):
-        pass
+    def get_lock_data(
+        self,
+        current_phase: int,
+        active_step: PickleStep | DillStep | NumpyStep,
+    ):
+        lock_data = {
+            "scheme_hash": hash(self),
+            "phase": current_phase,
+            "active": hash(active_step),
+        }
+        return lock_data
 
-    def lock_step(self, *args, **kwargs):
-        pass
+    def lock_step(
+        self,
+        current_phase: int,
+        active_step: PickleStep | DillStep | NumpyStep,
+    ):
+        with open(self.get_lock_path(), "w") as f:
+            lock_data = self.get_lock_data(current_phase, active_step)
+            json.dump(lock_data, f, indent=2)
 
-    def unlock_step(self, *args, **kwargs):
-        pass
+    def unlock_step(self):
+        self.get_lock_path().rename(self.get_lock_path(done=True))
 
     def write_error_report(self, *args, **kwargs):
         pass
@@ -155,36 +170,14 @@ class _Pipeline:
         if error is not None:
             raise error
 
-        # print("error", error, "rank", _MPI_RANK)
-
         mpi_barrier()
 
         self._initialized_schema = True
-
-    def finalize(self, *args, **kwargs):
-        pass
 
     @fixed_hash
     def __hash__(self):
         schema_str = str(self.get_schema())
         return hash(schema_str)
-
-
-class SerialPipeline(_Pipeline):
-    def __init__(self, cache_location: Path, pipeline_id: str):
-        super().__init__(cache_location, pipeline_id)
-
-    def get_lock_data(
-        self,
-        current_phase: int,
-        active_step: PickleStep | DillStep | NumpyStep,
-    ):
-        lock_data = {
-            "scheme_hash": hash(self),
-            "phase": current_phase,
-            "active": hash(active_step),
-        }
-        return lock_data
 
     def get_lock_path(self, done=False):
         process_id = "_proc_%03d" % _MPI_RANK
@@ -192,19 +185,7 @@ class SerialPipeline(_Pipeline):
             ".done" if done else ".active"
         )
 
-    def lock_step(
-        self,
-        current_phase: int,
-        active_step: PickleStep | DillStep | NumpyStep,
-    ):
-        with open(self.get_lock_path(), "w") as f:
-            lock_data = self.get_lock_data(current_phase, active_step)
-            json.dump(lock_data, f, indent=2)
-
-    def unlock_step(self):
-        self.get_lock_path().rename(self.get_lock_path(done=True))
-
-    def execute(self, *args, **kwargs):
+    def execute(self):
         self.initialize_schema()
         self.organize_steps()
 
@@ -250,7 +231,7 @@ class SerialPipeline(_Pipeline):
         # mpi_finalize()
 
     @as_single_process(_MPI_RANK)
-    def finalize(self, *args, **kwargs):
+    def finalize(self):
         assert self._execution_complete
 
         desc = "Failed" if self._pipeline_failed else "Completed"
@@ -278,10 +259,8 @@ class SerialPipeline(_Pipeline):
         for step in self.steps:
             if step.name == step_name:
                 try:
-                    # print(f"attempting to load result for {step}")
                     return step._load_result()
                 except FileNotFoundError:
-                    # print(f"FileNotFound for {step}")
                     step_status = step.get_status()
 
                     if step_status == -1:
@@ -317,7 +296,7 @@ class SerialPipeline(_Pipeline):
 
 def _as_step(
     step_type: str,
-    pipeline: SerialPipeline,
+    pipeline: Pipeline,
     depends_on: List[PickleStep | DillStep | NumpyStep] = [],
 ):
     def decorator(function):
@@ -347,21 +326,21 @@ def _as_step(
 
 
 def as_pickle_step(
-    pipeline: SerialPipeline,
+    pipeline: Pipeline,
     depends_on: List[PickleStep | DillStep | NumpyStep] = [],
 ):
     return _as_step("pickle", pipeline, depends_on)
 
 
 def as_dill_step(
-    pipeline: SerialPipeline,
+    pipeline: Pipeline,
     depends_on: List[PickleStep | DillStep | NumpyStep] = [],
 ):
     return _as_step("dill", pipeline, depends_on)
 
 
 def as_numpy_step(
-    pipeline: SerialPipeline,
+    pipeline: Pipeline,
     depends_on: List[PickleStep | DillStep | NumpyStep] = [],
 ):
     return _as_step("numpy", pipeline, depends_on)
