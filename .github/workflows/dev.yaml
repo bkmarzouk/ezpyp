@@ -6,11 +6,12 @@ on:
       - dev
 
 jobs:
-  lint:
+  lint_and_test:
     strategy:
       matrix:
-        os: ["ubuntu-latest"]
-        python-version: ["3.11"]
+        os: [ "ubuntu-latest" ]
+        python-version: [ "3.11" ]
+        mpi: [ 'mpich' ]
     name: lint with python ${{ matrix.python-version }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     steps:
@@ -25,10 +26,17 @@ jobs:
           pip install -e .[ci]
       - name: Lint check with ruff
         run: |
-          ruff --target-version=py311 --line-length 90 ./
+          ruff --target-version=py311 --line-length 79 ./
       - name: Style check with black
         run: |
           black ./ --check --line-length 79
-      - name: Run unit tests with pytest
+      - name: Run tests with pytest (serial)
         run: |
           pytest -s tests/units
+      - name: Setup MPI # https://github.com/mpi4py/setup-mpi
+        uses: mpi4py/setup-mpi@v1
+        with:
+          mpi: ${{ matrix.mpi }}
+      - name: Run tests with pytest (parallel)
+        run: |
+          mpirun -n 2 --use-hwthread-cpus pytest -s tests/units --with-mpi
