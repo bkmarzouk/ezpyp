@@ -16,6 +16,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
+      - name: Setup MPI # https://github.com/mpi4py/setup-mpi
+        uses: mpi4py/setup-mpi@v1
+        with:
+          mpi: ${{ matrix.mpi }}
       - name: Set up python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
         with:
@@ -33,10 +37,6 @@ jobs:
       - name: Run tests with pytest (serial)
         run: |
           pytest -s tests/units
-      - name: Setup MPI # https://github.com/mpi4py/setup-mpi
-        uses: mpi4py/setup-mpi@v1
-        with:
-          mpi: ${{ matrix.mpi }}
       - name: Run tests with pytest (parallel)
         run: |
           mpirun -n 2 --use-hwthread-cpus pytest -s tests/units --with-mpi
