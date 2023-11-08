@@ -29,6 +29,7 @@ class Pipeline:
     def __init__(self, cache_location: Path | str, pipeline_id: str):
         if isinstance(cache_location, str):
             cache_location = Path(cache_location)
+            cache_location = cache_location.absolute()
 
         self.phases: Dict[int, List[PickleStep | DillStep | NumpyStep]] = {}
         self.cache_location = cache_location
@@ -195,8 +196,13 @@ class Pipeline:
             )
 
             for step in steps_for_process:
+                _phase_index = "%02d" % phase_index
+                _mpi_rank = "%02d" % MPI_RANK
+
                 print(
-                    f"[Executing step '{step}' of phase {phase_index}] [MPI process @ {MPI_RANK}]"
+                    f"[MPI process {_mpi_rank}] "
+                    f"[Running component of phase {_phase_index}] "
+                    f"[Executing {step}]"
                 )
 
                 # print(self.get_lock_path())
