@@ -14,23 +14,15 @@ from ezpyp.utils import (
     SkippedStepWarning,
     UnrecognizedStepWarning,
     fixed_hash,
-    _MPI,
     item_selection,
     get_skip_downstream_condition,
     as_single_process,
 )
+from ezpyp.mpi import MPI
 
-try:
-    from mpi4py import MPI
-except ImportError:
-    print("-- Unable to import mpi4py, procs will be serial")
-    MPI = _MPI()
-
-_COMM = MPI.COMM_WORLD
-_MPI_RANK = _COMM.Get_rank()
-_MPI_SIZE = _COMM.Get_size()
-mpi_barrier = _COMM.Barrier
-mpi_finalize = MPI.Finalize
+COMM = MPI.COMM_WORLD
+MPI_RANK = COMM.Get_rank()
+MPI_SIZE = COMM.Get_size()
 
 
 class Pipeline:
@@ -87,7 +79,7 @@ class Pipeline:
 
     @staticmethod
     def barrier():
-        mpi_barrier()
+        COMM.Barrier()
 
     def get_lock_data(
         self,
@@ -131,7 +123,7 @@ class Pipeline:
     def initialize_schema(self):
         self.organize_steps()
 
-        if _MPI_RANK == 0:
+        if MPI_RANK == 0:
             current_schema = self.get_schema()
             error = None
             if self.schema_path.exists():
@@ -161,16 +153,16 @@ class Pipeline:
                 with open(self.schema_path, "w") as f:
                     json.dump(current_schema, f, indent=2, sort_keys=True)
 
-            for ii in range(1, _MPI_SIZE):
-                _COMM.send(error, dest=ii)
+            for ii in range(1, MPI_SIZE):
+                COMM.send(error, dest=ii)
 
         else:
-            error = _COMM.recv(source=0)
+            error = COMM.recv(source=0)
 
         if error is not None:
             raise error
 
-        mpi_barrier()
+        COMM.Barrier()
 
         self._initialized_schema = True
 
@@ -180,7 +172,7 @@ class Pipeline:
         return hash(schema_str)
 
     def get_lock_path(self, done=False):
-        process_id = "_proc_%03d" % _MPI_RANK
+        process_id = "_proc_%03d" % MPI_RANK
         return self.cache_location.joinpath(f"step{process_id}").with_suffix(
             ".done" if done else ".active"
         )
@@ -196,12 +188,12 @@ class Pipeline:
             error_in_current_phase = False
 
             steps_for_process = item_selection(
-                current_phase_steps, _MPI_RANK, _MPI_SIZE
+                current_phase_steps, MPI_RANK, MPI_SIZE
             )
 
             for step in steps_for_process:
                 print(
-                    f"[Executing step '{step}' of phase {phase_index}] [MPI process @ {_MPI_RANK}]"
+                    f"[Executing step '{step}' of phase {phase_index}] [MPI process @ {MPI_RANK}]"
                 )
 
                 # print(self.get_lock_path())
@@ -219,18 +211,15 @@ class Pipeline:
 
                 self.unlock_step()
 
-            mpi_barrier()
+            COMM.Barrier()
             skip_downstream_phases = get_skip_downstream_condition(
                 current_phase_steps
             )
 
         self._execution_complete = True
-        mpi_barrier()
         self.finalize()
-        mpi_barrier()
-        # mpi_finalize()
 
-    @as_single_process(_MPI_RANK)
+    @as_single_process(MPI_RANK, mpi_comm=COMM)
     def finalize(self):
         assert self._execution_complete
 
@@ -347,4 +336,4 @@ def as_numpy_step(
 
 
 if __name__ == "__main__":
-    print(_MPI_RANK + 1, "/", _MPI_SIZE)
+    print(MPI_RANK + 1, "/", MPI_SIZE)

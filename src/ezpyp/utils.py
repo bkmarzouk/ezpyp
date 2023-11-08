@@ -1,6 +1,7 @@
 import os
 from copy import deepcopy
 from typing import Callable
+from ezpyp.mpi import MPI
 
 
 class MissingDependency(Exception):
@@ -57,28 +58,6 @@ def hash_function(function: Callable):
     return hash(function)
 
 
-class _Comm:
-    @staticmethod
-    def Barrier():
-        pass
-
-    @staticmethod
-    def Get_rank():
-        return 0
-
-    @staticmethod
-    def Get_size():
-        return 1
-
-
-class _MPI:
-    COMM_WORLD = _Comm()
-
-    @staticmethod
-    def Finalize():
-        pass
-
-
 def item_selection(
     items_to_distribute: list | dict, mpi_rank: int, mpi_size: int
 ) -> list:
@@ -104,11 +83,17 @@ def item_selection(
     return output[mpi_rank]
 
 
-def as_single_process(current_proc: int, executing_proc: int = 0):
+def as_single_process(
+    current_proc: int, mpi_comm: MPI.COMM_WORLD, executing_proc: int = 0
+):
     def decorator(function: Callable):
         def wrapper(*args, **kwargs):
             if current_proc == executing_proc:
-                return function(*args, **kwargs)
+                result = function(*args, **kwargs)
+            else:
+                result = None
+            mpi_comm.Barrier()
+            return result
 
         return wrapper
 
@@ -117,16 +102,3 @@ def as_single_process(current_proc: int, executing_proc: int = 0):
 
 def get_skip_downstream_condition(steps: list):
     return any([s.get_status() > 0 for s in steps])
-
-
-if __name__ == "__main__":
-    from mpi4py import MPI
-
-    comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
-
-    @as_single_process(rank, 0)
-    def foo():
-        print(f"i am process {rank}")
-
-    foo()
