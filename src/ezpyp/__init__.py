@@ -26,7 +26,10 @@ MPI_SIZE = COMM.Get_size()
 
 
 class Pipeline:
-    def __init__(self, cache_location: Path, pipeline_id: str):
+    def __init__(self, cache_location: Path | str, pipeline_id: str):
+        if isinstance(cache_location, str):
+            cache_location = Path(cache_location)
+
         self.phases: Dict[int, List[PickleStep | DillStep | NumpyStep]] = {}
         self.cache_location = cache_location
         self.pipeline_id = pipeline_id
